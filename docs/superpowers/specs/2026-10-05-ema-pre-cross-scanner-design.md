@@ -4,7 +4,7 @@ Date: 5 October 2026. Status: concrete design awaiting written-spec review.
 
 ## Purpose and agreed principles
 
-Build a fresh, independently installable Windows desktop app for the user's laptop. It scans all currently option-eligible NSE stock underlyings (expected to be approximately 210), using five-minute Upstox candles and live prices. For bullish setups, warn slightly before EMA9 crosses EMA21 from below. Rank qualifying setups by the upward angle of EMA9 on a consistent chart view. No ATR normalization or old breakout/entry filters are carried into these new rules.
+Build a fresh, independently installable Windows desktop app for the user's laptop. It scans all currently option-eligible NSE stock underlyings (expected to be approximately 210), using five-minute Upstox candles and live prices. For bullish setups, warn slightly before EMA9 crosses EMA21 from below. For bearish setups, apply the exact mirror: warn slightly before EMA9 crosses EMA21 from above. Rank qualifying setups by EMA9's direction-aligned angle on a consistent chart view. No ATR normalization or old breakout/entry filters are carried into these new rules.
 
 The app is a signal scanner. This first release places no orders and selects no option strikes. Prices and EMAs refer to the underlying shares. The user may uninstall all old apps; the new app must not depend on their files, Python environments, shortcuts, or data.
 
@@ -29,7 +29,7 @@ Proposed defaults:
 - Five-minute candles; last 60 candles visible, including the developing candle.
 - Reference plot aspect ratio 2:1, retained when the window resizes.
 - Price axis uses the visible candle/EMA range with 5% padding; the scale is held constant within a five-minute candle unless a price moves outside it. Re-scaling recalculates all displayed angles coherently.
-- Measure EMA9's upward chord over the latest two candle intervals, ending at the developing candle's provisional EMA9 point. Angle = `degrees(atan2(upward_pixel_change, horizontal_pixel_change))`.
+- Measure EMA9's signed chord over the latest two candle intervals, ending at the developing candle's provisional EMA9 point. Angle = `degrees(atan2(upward_pixel_change, horizontal_pixel_change))`. Rising is positive and falling is negative.
 - The table displays **EMA9 chart angle**, with an explanation of the 60-candle reference view. The selected stock's chart shows the two EMA lines and the measured slope segment.
 - No ATR or frozen historical setup angle enters this metric or ranking. Arbitrarily zoomed Upstox charts can look different; matching an exact external view would require its same scale and aspect ratio. The reference view makes the app's number visually inspectable and repeatable.
 - Flat/invalid price ranges yield a zero/invalid angle instead of division errors.
@@ -58,18 +58,33 @@ The proposed 0.05% default gives “very close” a measurable definition; it is
 
 No previous-candle breakout, 0.10 ATR buffer, EMA9 8-degree floor, EMA21 angle tolerance, or old direct/reentry cycle logic is applied. This is the user's new pre-crossover rule.
 
-## States and ranking
+## Bearish ARMED rule
 
-- **WATCHING**: ready but bullish ARMED conditions are not all satisfied.
+A stock is ARMED SHORT when all these conditions hold with fresh data:
+
+1. Its live five-minute EMA9 is strictly above EMA21.
+2. EMA9 is falling relative to the previous completed EMA9, and its reference-chart angle is negative.
+3. The positive EMA gap, EMA9 minus EMA21, is smaller than at the previous completed candle: EMA9 is converging toward EMA21 from above.
+4. Gap percentage, `100 * (EMA9 - EMA21) / latest_stock_price`, is at or below the same adjustable **0.05% default**.
+
+The bearish rule uses identical history/readiness checks, chart geometry, settings, provisional updates, and cancellation behavior. A symbol cannot be ARMED LONG and ARMED SHORT simultaneously. At exact EMA equality, neither pre-crossover direction is ARMED; a crossing is recognized when the EMA relationship moves to the opposite side.
+
+## States and ranking for both directions
+
+- **WATCHING**: ready but neither direction's ARMED conditions are all satisfied.
 - **ARMED**: the conditions above currently hold; signal is explicitly labelled provisional/pre-crossover.
-- **CROSSED**: a previously observed below-EMA21 state crosses above it during a live candle. This is a live crossover, not a fill or closed-candle confirmation.
-- **CONFIRMED**: the completed five-minute candle closes with EMA9 above EMA21.
-- **CANCELLED/REVERSED**: an armed setup loses its rising/converging/proximity conditions, or a live crossover reverses before candle close.
+- **CROSSED**: EMA9 crosses above EMA21 for LONG, or below EMA21 for SHORT, during a live candle. The previous relationship must have been observed. This is a live crossover, not a fill or closed-candle confirmation.
+- **CONFIRMED**: the completed five-minute candle closes with EMA9 above EMA21 for LONG, or below EMA21 for SHORT.
+- **CANCELLED/REVERSED**: an armed setup loses its direction/convergence/proximity conditions, or a live crossover reverses before candle close. For LONG, rising EMA9 is required; for SHORT, falling EMA9 is required.
 - **PAUSED**: missing history, invalid/out-of-order quotes, stale feed, closed market, or recovery.
 
-Rank only fresh ARMED candidates by current positive EMA9 chart angle, descending. Break equal-angle ties by smaller gap percentage, then symbol. Show crossing events separately so historical crossings cannot dominate the ARMED opportunity list.
+A price jump can cross the EMAs without a received quote satisfying the proximity rule first. Log that crossover as observed without an earlier ARMED warning; do not invent a warning time or promise advance notice for every crossover. A first connection observation that is already crossed is not a newly observed crossover.
+
+Rank only fresh ARMED candidates by direction-aligned EMA9 chart-angle strength, descending: positive angle for LONG, negative angle multiplied by minus one for SHORT. Retain the signed angle in the display. Separate Bullish and Bearish views use the same rule; a combined view sorts by direction-aligned magnitude. Break equal-strength ties by smaller gap percentage, then symbol. Show crossing events separately so historical crossings cannot dominate the ARMED opportunity list.
 
 The ranked list can contain every qualifying stock; no old Top 7/Top 8 restriction is inherited. The table refreshes at most once per second while quote evaluation remains event-driven. Emit an event on state transition and avoid duplicate alert sounds for unchanged states. Initial observations are clearly labelled, with crossing times recorded only when actually observed.
+
+Both LONG and SHORT rules require fresh valid quotes. Initially use a 15-second freshness ceiling, reject quotes more than two seconds ahead of local/server time or arriving out of order, and gate live signals on the broker's normal NSE equity trading-session status. These operational checks are distinct from angle/proximity qualification. Retain quotes/history for diagnosis but label non-ready rows PAUSED.
 
 ## Stock universe and data access
 
@@ -82,8 +97,8 @@ The ranked list can contain every qualifying stock; no old Top 7/Top 8 restricti
 
 ## Interface
 
-- Main board: Connect/Disconnect, connection/market status, coverage counts, proximity threshold, and ranked ARMED candidates.
-- Columns: rank, symbol, state, EMA9 angle, EMA9, EMA21, gap %, latest stock price, last quote time, and armed time.
+- Main board: Connect/Disconnect, connection/market status, coverage counts, proximity threshold, and ranked ARMED candidates, with All/Bullish/Bearish views.
+- Columns: rank, symbol, side (LONG/SHORT), state, signed EMA9 angle, EMA9, EMA21, gap %, latest stock price, last quote time, and armed time.
 - Selected-stock reference chart: price candles, EMA9, EMA21, gap, angle measurement, and provisional/closed-bar distinction.
 - Separate crossover/event log, Settings/token input, and Diagnostics tabs.
 - Save only non-secret settings such as window size, threshold, and chart parameters. Keep new-app logs in its own data folder.
@@ -99,7 +114,7 @@ Separate modules cover indicators/chart geometry, signal states, feed adaptation
 
 - Indicator fixtures verify completed EMA recursion and provisional EMA recomputation, including many ticks in one candle.
 - Chart fixtures verify angle equals the rendered reference-chart slope, positive/negative/flat cases, consistent aspect ratio, and coherent re-scaling. No ATR input exists in ranking.
-- Signal tests verify pre-crossover arming, proximity edges, convergence, cancellation, live crossing, close confirmation, reversal, duplicate suppression, and startup/reconnect semantics.
+- Signal tests verify symmetric bullish/bearish pre-crossover arming, proximity edges, convergence, equality handling, cancellation, live crossing, close confirmation, reversal, duplicate suppression, and startup/reconnect semantics. Mirrored price fixtures must produce mirrored states and comparable ranking strengths.
 - Universe tests exercise stock-option eligibility, expiry, equity mapping, missing keys, index exclusions, and counts.
 - Feed tests use synthetic messages and mocked REST/SDK boundaries. They exercise stale/out-of-order data, missing minutes, disconnection, recovery, closed market, and independent stock readiness.
 - A 210-stock synthetic load test measures quote-to-event/GUI-queue latency and validates no missing transitions. Target alert visibility within one second of a received qualifying quote; actual Windows UI/network latency requires a Windows run.
@@ -109,7 +124,7 @@ Separate modules cover indicators/chart geometry, signal states, feed adaptation
 
 ## Scope limits and remaining review points
 
-This first release implements bullish setups only, because those are the rules supplied. It is a scanner with no automatic/manual order placement, bearish strategy, option selection, exits, profit/loss accounting, or backtest profitability claims.
+This first release implements both bullish and bearish pre-crossover setups. It is a scanner with no automatic/manual order placement, option selection, exits, profit/loss accounting, or backtest profitability claims.
 
 The concrete defaults to review are the 0.05% proximity threshold, two-interval angle measurement, 60-candle reference chart, and 2:1 plot aspect ratio. The intended product principles, broker, timeframe, whole-universe scanning, independent Windows installation, and Desktop shortcut are established.
 
