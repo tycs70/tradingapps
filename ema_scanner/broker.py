@@ -4,11 +4,14 @@ from datetime import datetime, timedelta
 import gzip
 import json
 import math
+import ssl
 import threading
 import time
 from urllib.parse import quote
 
 import requests
+import certifi
+import websocket
 
 from .history import parse_candles, parse_time, validate_history
 from .models import Candle, IST
@@ -147,19 +150,15 @@ class Broker:
         return candles
 
     def stream(self, keys, message, status):
-        import upstox_client
-        config = upstox_client.Configuration()
-        config.access_token = self._token
-        client = upstox_client.ApiClient(config)
-        self._stream = upstox_client.MarketDataStreamerV3(client,keys,'full')
-        self._stream.auto_reconnect(True,5,20)
-        self._stream.on('open',lambda *args: status('open'))
-        self._stream.on('close',lambda *args: status('closed'))
-        self._stream.on('error',lambda *args: status('error'))
-        self._stream.on('message',message)
+        # SDK 2.23.0's feeder sets CERT_NONE. Use its protobuf decoder with
+        # our own verified transport rather than inheriting that behavior.
+        url = self._json('https://api.upstox.com/v3/feed/market-data-feed/authorize')['data']['authorized_redirect_uri']
+        if not url.startswith('wss://'):
+            raise RuntimeError('Upstox returned an invalid secure feed address.')
+        self._stream = SecureStream(url,keys,message,status)
         def run():
             try:
-                if not self._stop.is_set(): self._stream.connect()
+                if not self._stop.is_set(): self._stream.run()
             except Exception:
                 status('error')
         threading.Thread(target=run,name='upstox-stream',daemon=True).start()
@@ -167,7 +166,50 @@ class Broker:
     def disconnect(self):
         self._stop.set()
         if self._stream:
-            self._stream.auto_reconnect(False)
             try: self._stream.disconnect()
             except Exception: pass
         self._token = ''
+
+
+class SecureStream:
+    def __init__(self, url, keys, message, status, factory=websocket.WebSocketApp):
+        self.url,self.keys,self.message,self.status,self.factory = url,keys,message,status,factory
+        self.stop = threading.Event()
+        self.ws = None
+
+    def on_open(self, ws):
+        if self.stop.is_set():
+            ws.close()
+            return
+        self.status('open')
+        request = {'guid':'ema-pre-cross','method':'sub','data':{'instrumentKeys':self.keys,'mode':'full'}}
+        ws.send(json.dumps(request).encode('utf-8'),opcode=websocket.ABNF.OPCODE_BINARY)
+
+    def on_message(self, ws, data):
+        if self.stop.is_set(): return
+        try:
+            from upstox_client.feeder.proto import MarketDataFeedV3_pb2
+            from google.protobuf.json_format import MessageToDict
+            self.message(MessageToDict(MarketDataFeedV3_pb2.FeedResponse.FromString(data)))
+        except Exception:
+            self.status('invalid')
+
+    def run_once(self):
+        if self.stop.is_set(): return
+        self.ws = self.factory(self.url,on_open=self.on_open,on_message=self.on_message,
+                               on_error=lambda *args:self.status('error'),
+                               on_close=lambda *args:self.status('closed'))
+        self.ws.run_forever(sslopt={'cert_reqs':ssl.CERT_REQUIRED,'check_hostname':True,
+                                   'ca_certs':certifi.where()},ping_interval=20,ping_timeout=10)
+
+    def run(self):
+        for attempt in range(21):
+            if self.stop.is_set(): break
+            self.run_once()
+            if self.stop.wait(5): break
+        if not self.stop.is_set(): self.status('stopped')
+
+    def disconnect(self):
+        self.stop.set()
+        if self.ws: self.ws.close()
+        self.url = ''

@@ -5,7 +5,8 @@ from unittest.mock import Mock
 from ema_scanner.models import Candle, IST
 from ema_scanner.universe import eligible_stocks
 from ema_scanner.history import parse_candles, validate_history, MinuteBook
-from ema_scanner.broker import normalize_token, parse_feed, Broker, RateLimiter
+from ema_scanner.broker import normalize_token, parse_feed, Broker, RateLimiter, SecureStream
+import ssl
 
 NOW = datetime(2026,10,5,10,30,tzinfo=IST)
 
@@ -119,6 +120,16 @@ class BrokerTest(unittest.TestCase):
         rate=RateLimiter(.25,clock,sleeper)
         rate.wait();rate.wait()
         sleeper.assert_called_once_with(.25)
+
+    def test_stream_tls_and_stop_before_open(self):
+        transport=Mock()
+        stream=SecureStream('wss://example.invalid/feed', ['NSE_EQ|A'], Mock(), Mock(), factory=Mock(return_value=transport))
+        stream.run_once()
+        self.assertEqual(transport.run_forever.call_args.kwargs['sslopt']['cert_reqs'],ssl.CERT_REQUIRED)
+        self.assertTrue(transport.run_forever.call_args.kwargs['sslopt']['check_hostname'])
+        stream.disconnect()
+        stream.on_open(transport)
+        transport.send.assert_not_called()
 
 
 if __name__=='__main__': unittest.main()
