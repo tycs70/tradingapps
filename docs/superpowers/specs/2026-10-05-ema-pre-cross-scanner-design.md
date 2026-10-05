@@ -1,6 +1,6 @@
 # EMA Pre-Cross Scanner — Windows application design
 
-Date: 5 October 2026. Status: concrete design awaiting written-spec review.
+Date: 5 October 2026. Status: approved for implementation by the user's “alright go ahead ... build the app”.
 
 ## Purpose and agreed principles
 
@@ -128,4 +128,4 @@ This first release implements both bullish and bearish pre-crossover setups. It 
 
 The concrete defaults to review are the 0.05% proximity threshold, two-interval angle measurement, 60-candle reference chart, and 2:1 plot aspect ratio. The intended product principles, broker, timeframe, whole-universe scanning, independent Windows installation, and Desktop shortcut are established.
 
-Next stage: review this written spec, then produce the implementation plan and select its execution method. No new application code has been written yet.
+Implementation follows the approved specification in this repository, with tests and a Windows installation package.
