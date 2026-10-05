@@ -1,6 +1,7 @@
 """Offline imports, broker decoder, strategy symmetry and optional Tk startup."""
 from datetime import datetime, timedelta, timezone
 import argparse
+import os
 import struct
 import sys
 
@@ -23,6 +24,11 @@ def verify(no_display=False):
     payload=MarketDataFeedV3_pb2.FeedResponse(type=1,currentTs=1)
     if MessageToDict(payload)['type']!='live_feed':raise RuntimeError('Feed decoder check failed.')
     upstox_client.ApiClient(upstox_client.Configuration())
+    if os.name=='nt':
+        from ema_scanner.credentials import WindowsDPAPI
+        cipher=WindowsDPAPI();probe=b'EMA offline token-protection self-check'
+        if cipher.unprotect(cipher.protect(probe))!=probe:
+            raise RuntimeError('Windows token-protection self-check failed.')
     if not no_display:
         root=tkinter.Tk();root.withdraw();root.update();root.destroy()
     print('Offline installation checks passed: Python x64, Tk, dependencies, V3 decoder and EMA.')

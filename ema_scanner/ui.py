@@ -1,9 +1,12 @@
 """Tk main-thread UI; only immutable coordinator snapshots reach the widgets."""
 from datetime import datetime
+from dataclasses import replace
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 from . import VERSION
+from .broker import normalize_token
+from .credentials import TokenStore
 from .models import IST, Settings
 
 BG='#101925'; PANEL='#172334'; TEXT='#e6edf5'; MUTED='#91a4bc'
@@ -21,8 +24,9 @@ def fmt_time(value):
 
 
 class App:
-    def __init__(self,root,scanner,store):
+    def __init__(self,root,scanner,store,token_store=None):
         self.root,self.scanner,self.store=root,scanner,store
+        self.token_store=token_store if token_store is not None else TokenStore(store.path.parent/'upstox-token.dpapi')
         self.settings=store.load();self.selected=None;self.current=None;self.after_id=None;self.closed=False
         self._event_count=0;self._last_event=None;self._event_sequence=0
         root.title(f'EMA Pre-Cross Scanner  ·  {VERSION}')
@@ -30,6 +34,13 @@ class App:
         root.protocol('WM_DELETE_WINDOW',self.close)
         self._style()
         self.token=tk.StringVar();self.filter=tk.StringVar(value='All')
+        self.remember_token=tk.BooleanVar(value=self.settings.remember_token and self.token_store.available)
+        self.token_status=tk.StringVar(value='Saved tokens still expire. Replace the token when Upstox requires it.')
+        try:
+            if self.remember_token.get():self.token.set(self.token_store.load() or '')
+            elif not self.settings.remember_token:self.token_store.clear()
+        except OSError:
+            self.token_status.set('Saved token is unavailable. Paste a fresh token, or untick Remember token to forget it.')
         self.proximity=tk.StringVar(value=str(self.settings.proximity_pct))
         self.chart_bars=tk.StringVar(value=str(self.settings.chart_bars))
         self.angle_intervals=tk.StringVar(value=str(self.settings.angle_intervals))
@@ -86,7 +97,7 @@ class App:
 
     def _board(self):
         controls=ttk.Frame(self.main);controls.pack(fill='x',pady=(0,8))
-        ttk.Label(controls,text='ARMED OPPORTUNITIES',font=('Segoe UI',11,'bold')).pack(side='left')
+        ttk.Label(controls,text='TOP 20 ARMED OPPORTUNITIES',font=('Segoe UI',11,'bold')).pack(side='left')
         ttk.Label(controls,textvariable=self.rule,style='Muted.TLabel').pack(side='left',padx=18)
         view=ttk.Combobox(controls,textvariable=self.filter,values=['All','Bullish','Bearish'],state='readonly',width=11)
         view.pack(side='right');view.bind('<<ComboboxSelected>>',lambda e:self.refresh())
@@ -114,9 +125,16 @@ class App:
 
     def _settings(self):
         ttk.Label(self.settings_tab,text='Upstox connection',font=('Segoe UI',15,'bold')).pack(anchor='w')
-        ttk.Label(self.settings_tab,text='Paste a current Upstox access token here. It stays in memory for this connection.',style='Muted.TLabel').pack(anchor='w',pady=8)
+        ttk.Label(self.settings_tab,text='Paste a current Upstox access token, or use the saved token below.',style='Muted.TLabel').pack(anchor='w',pady=8)
         self.token_entry=ttk.Entry(self.settings_tab,textvariable=self.token,show='•',width=75)
         self.token_entry.pack(anchor='w',fill='x')
+        self.remember_check=ttk.Checkbutton(self.settings_tab,text='Remember token on this Windows account (encrypted)',
+                                          variable=self.remember_token,command=self.remember_changed)
+        self.remember_check.pack(anchor='w',pady=(10,4))
+        if not self.token_store.available:
+            self.remember_check.state(['disabled'])
+            self.token_status.set('Remember token requires Windows. Connect with a pasted token on this system.')
+        ttk.Label(self.settings_tab,textvariable=self.token_status,style='Muted.TLabel',wraplength=960).pack(anchor='w')
         ttk.Button(self.settings_tab,text='Connect',command=self.connect).pack(anchor='w',pady=12)
         ttk.Label(self.settings_tab,text='Trading rules',font=('Segoe UI',15,'bold')).pack(anchor='w',pady=(16,10))
         form=ttk.Frame(self.settings_tab);form.pack(anchor='w')
@@ -143,16 +161,41 @@ class App:
 
     def connect(self):
         token=self.token.get().strip()
+        if not token and self.remember_token.get():
+            try:token=self.token_store.load() or ''
+            except OSError:
+                self.token_status.set('Saved token is unavailable. Paste a fresh token, or untick Remember token to forget it.')
         if not token:
             self.tabs.select(self.settings_tab);self.token_entry.focus_set();return
         try:
+            token=normalize_token(token)
+            if self.remember_token.get():
+                self.token_store.save(token)
+                self.token_status.set('Token saved with Windows encryption. It will be filled in on the next launch.')
+            else:self.token_store.clear()
+            settings=replace(self.settings,remember_token=self.remember_token.get())
+            self.store.save(settings);self.settings=settings
             self.scanner.connect(token);self.token.set('');self.tabs.select(self.main)
         except ValueError as exc: messagebox.showerror('Upstox connection',str(exc),parent=self.root)
+        except OSError:
+            messagebox.showerror('Remember token','Unable to save or forget the token securely. Check your data-folder access, or untick Remember token and try again.',parent=self.root)
         self.refresh()
+
+    def remember_changed(self):
+        try:
+            if not self.remember_token.get():self.token_store.clear()
+            settings=replace(self.settings,remember_token=self.remember_token.get())
+            self.store.save(settings);self.settings=settings
+            self.token_status.set('Token will be encrypted and saved when you click Connect.' if settings.remember_token else
+                                  'Saved token removed. Tokens are kept in memory unless you enable Remember token.')
+        except OSError:
+            self.remember_token.set(self.settings.remember_token)
+            messagebox.showerror('Remember token','Unable to update the saved-token preference. Check your data-folder access.',parent=self.root)
 
     def apply_settings(self):
         try:
-            settings=Settings(float(self.proximity.get()),int(self.chart_bars.get()),int(self.angle_intervals.get()))
+            settings=Settings(float(self.proximity.get()),int(self.chart_bars.get()),int(self.angle_intervals.get()),
+                              remember_token=self.remember_token.get())
             self.store.save(settings);self.settings=settings;self.scanner.set_settings(settings)
         except (ValueError,OSError) as exc:
             messagebox.showerror('Settings',str(exc) if isinstance(exc,ValueError) else 'Unable to save settings.',parent=self.root)
@@ -178,7 +221,8 @@ class App:
         self.status.set(data['status']+'   ·   NSE: '+data['market'])
         self.coverage.set('    '.join(f'{k.capitalize()}: {v}' for k,v in data['counts'].items()))
         settings=data['settings'];self.rule.set(f'Gap ≤ {settings.proximity_pct:g}%  ·  {settings.chart_bars}-candle reference')
-        rows=[r for r in data['armed'] if self.filter.get()=='All' or r.side==('LONG' if self.filter.get()=='Bullish' else 'SHORT')]
+        qualifying=[r for r in data['armed'] if self.filter.get()=='All' or r.side==('LONG' if self.filter.get()=='Bullish' else 'SHORT')]
+        rows=qualifying[:20]
         existing=set(self.board.get_children());wanted={r.key for r in rows}
         for key in existing-wanted:self.board.delete(key)
         for rank,s in enumerate(rows,1):
@@ -187,7 +231,7 @@ class App:
             else:self.board.insert('', 'end',iid=s.key,values=values,tags=(s.side,))
             self.board.move(s.key,'',rank-1)
         if not self.selected and rows:self.selected=rows[0].key
-        self.empty.configure(text=f'{len(rows)} fresh ARMED setup(s). Ranking updates with current EMA9 chart angle.' if rows else
+        self.empty.configure(text=f'Showing {len(rows)} of {len(qualifying)} fresh ARMED setup(s). Ranked by current EMA9 chart angle.' if rows else
                              ('No fresh ARMED setups. Check coverage and Diagnostics.' if data['connected'] else 'Connect with a current Upstox token to load and scan eligible stocks.'))
         self.stock_pick.configure(values=sorted(s.symbol for s in data['rows']))
         events=data['events'][-300:]

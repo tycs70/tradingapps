@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import tkinter as tk
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from ema_scanner.models import Settings
 from ema_scanner.models import Event
@@ -51,6 +51,99 @@ class DesktopTest(unittest.TestCase):
         self.data['armed']=[];self.data['rows']=[];self.data['market']='CLOSED'
         self.app.refresh()
         self.assertEqual(self.app.board.get_children(),())
+
+    def ranked_rows(self):
+        return [replace(self.long if i<25 else self.short,
+                        symbol=f'STOCK{i:02}',key=f'STOCK{i:02}',
+                        angle=60-i if i<25 else -(60-i)) for i in range(50)]
+
+    def test_top_twenty_preserves_rank_and_full_scan_coverage(self):
+        rows=self.ranked_rows()
+        self.data['armed']=rows;self.data['rows']=rows
+        self.data['stocks']=[(r.symbol,True,'Ready') for r in rows]
+        self.app.refresh()
+        self.assertEqual(self.app.board.get_children(),tuple(r.key for r in rows[:20]))
+        self.assertIn('20 of 50',self.app.empty.cget('text'))
+        self.assertIn('Eligible: 210',self.app.coverage.get())
+        self.assertEqual(len(self.app.stock_table.get_children()),50)
+        self.assertEqual(len(self.app.stock_pick.cget('values')),50)
+
+    def test_side_filter_is_applied_before_top_twenty_limit(self):
+        rows=self.ranked_rows()
+        self.data['armed']=rows;self.data['rows']=rows
+        self.app.filter.set('Bearish');self.app.refresh()
+        self.assertEqual(self.app.board.get_children(),tuple(r.key for r in rows[25:45]))
+        self.assertIn('20 of 25',self.app.empty.cget('text'))
+
+    def test_top_twenty_does_not_fill_with_unqualified_stocks(self):
+        self.data['rows']+=self.ranked_rows()
+        self.app.refresh()
+        self.assertEqual(self.app.board.get_children(),('ALONG','BSHORT'))
+
+    def use_token_store(self,remember=False):
+        from ema_scanner.credentials import TokenStore
+        from tests.test_credentials import FakeCipher
+        self.app.close();self.root=tk.Tk()
+        store=SettingsStore(Path(self.temp.name)/'settings.json')
+        store.save(Settings(remember_token=remember))
+        token_store=TokenStore(store.path.parent/'upstox-token.dpapi',cipher=FakeCipher())
+        self.app=App(self.root,self.scanner,store,token_store=token_store)
+        self.root.update()
+        return token_store
+
+    def test_remembered_token_restores_masked_input_without_auto_connect(self):
+        self.assertTrue(hasattr(self.app,'remember_token'),'Remember token is not implemented')
+        token_store=self.use_token_store()
+        self.app.remember_token.set(True);self.app.remember_changed()
+        self.app.token.set('Bearer saved-secret-token');self.app.connect()
+        self.assertEqual(token_store.load(),'saved-secret-token')
+        self.assertNotIn('saved-secret-token',self.app.store.path.read_text())
+        self.assertEqual(self.app.token.get(),'')
+        self.app.close();self.root=tk.Tk();self.scanner.reset_mock()
+        self.app=App(self.root,self.scanner,self.app.store,token_store=token_store)
+        self.root.update()
+        self.assertEqual(self.app.token.get(),'saved-secret-token')
+        self.assertEqual(self.app.token_entry.cget('show'),'•')
+        self.scanner.connect.assert_not_called()
+
+    def test_unchecking_remember_deletes_saved_token_and_preference(self):
+        self.assertTrue(hasattr(self.app,'remember_token'),'Remember token is not implemented')
+        token_store=self.use_token_store(remember=True)
+        token_store.save('saved-secret-token')
+        self.app.remember_token.set(False);self.app.remember_changed()
+        self.assertFalse(token_store.path.exists())
+        self.assertFalse(self.app.store.load().remember_token)
+        self.app.apply_settings()
+        self.assertFalse(self.app.store.load().remember_token)
+
+    def test_reconnect_reuses_saved_token_after_input_is_cleared(self):
+        token_store=self.use_token_store(remember=True)
+        self.app.token.set('saved-secret-token');self.app.connect()
+        self.assertEqual(self.app.token.get(),'')
+        self.scanner.reset_mock()
+        self.app.connect()
+        self.scanner.connect.assert_called_once_with('saved-secret-token')
+        self.assertEqual(token_store.load(),'saved-secret-token')
+
+    def test_token_storage_failure_has_no_plaintext_fallback(self):
+        self.assertTrue(hasattr(self.app,'remember_token'),'Remember token is not implemented')
+        token_store=self.use_token_store(remember=True)
+        self.scanner.reset_mock();self.app.token.set('private-token')
+        with patch.object(token_store.cipher,'protect',side_effect=OSError('private-token')),patch('ema_scanner.ui.messagebox.showerror') as error:
+            self.app.connect()
+        self.scanner.connect.assert_not_called()
+        self.assertFalse(token_store.path.exists())
+        self.assertNotIn('private-token',str(error.call_args))
+
+    def test_unreadable_saved_token_does_not_prevent_startup(self):
+        self.assertTrue(hasattr(self.app,'remember_token'),'Remember token is not implemented')
+        token_store=self.use_token_store(remember=True)
+        token_store.path.write_bytes(b'corrupt blob')
+        self.app.close();self.root=tk.Tk()
+        self.app=App(self.root,self.scanner,self.app.store,token_store=token_store)
+        self.root.update()
+        self.assertEqual(self.app.token.get(),'')
+        self.assertIn('unavailable',self.app.token_status.get().lower())
 
     def test_chart_uses_same_geometry_and_measured_chord(self):
         self.app.selected='ALONG';self.app.refresh();self.root.update()

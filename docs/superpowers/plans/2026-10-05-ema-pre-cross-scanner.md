@@ -4,6 +4,8 @@
 
 **Goal:** Deliver an independent Windows installer and Desktop shortcut for the approved Upstox EMA9/EMA21 scanner.
 
+This completed plan records the initial 1.0.0 implementation. The user subsequently authorized a 1.0.1 update: display Top 20 ARMED stocks per direction view while retaining full scanning, and add optional current-user Windows DPAPI token persistence with masked autofill and forgetting. These amendments supersede the original memory-only token requirement below. The update includes regression checks, an independent review and a rebuilt offline installer.
+
 **Architecture:** Pure indicator, geometry and signal-state modules feed a threaded scanner coordinator. One SDK V3 connection supplies quotes and minute candles; bounded, rate-limited REST workers warm and reconcile five-minute history. Tk renders immutable snapshots on its main thread. The installer stages a private Python/Tk runtime and bundled wheels before creating shortcuts.
 
 **Tech Stack:** Python 3.12, tkinter, requests 2.32.5, upstox-python-sdk 2.23.0, stdlib unittest, PowerShell, bundled CPython 3.12.15 Windows x86_64.

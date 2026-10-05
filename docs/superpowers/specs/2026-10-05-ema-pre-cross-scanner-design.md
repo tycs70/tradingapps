@@ -2,6 +2,8 @@
 
 Date: 5 October 2026. Status: approved for implementation by the user's “alright go ahead ... build the app”.
 
+Version 1.0.1 amendments are authorized by the user's requests for Top 20 shares and saved API tokens: limit the displayed ARMED board to 20 after direction filtering, and optionally persist the access token using current-user Windows DPAPI. All scanning and trading principles below continue to apply.
+
 ## Purpose and agreed principles
 
 Build a fresh, independently installable Windows desktop app for the user's laptop. It scans all currently option-eligible NSE stock underlyings (expected to be approximately 210), using five-minute Upstox candles and live prices. For bullish setups, warn slightly before EMA9 crosses EMA21 from below. For bearish setups, apply the exact mirror: warn slightly before EMA9 crosses EMA21 from above. Rank qualifying setups by EMA9's direction-aligned angle on a consistent chart view. No ATR normalization or old breakout/entry filters are carried into these new rules.
@@ -10,7 +12,7 @@ The app is a signal scanner. This first release places no orders and selects no 
 
 ## Delivery and Windows installation
 
-- Name: **EMA Pre-Cross Scanner**, fresh version **1.0.0**.
+- Name: **EMA Pre-Cross Scanner**, current version **1.0.1** (initial release 1.0.0).
 - Target: Windows 10/11, 64-bit Intel/AMD laptop, per-user installation without administrator rights.
 - Deliver a downloadable ZIP containing the app, `INSTALL.bat`, PowerShell installer, uninstall support, and a bundled private Python/Tk runtime and dependency wheels.
 - Double-click `INSTALL.bat`; installation verifies the bundled file hashes, installs into `%LOCALAPPDATA%\EMA_PreCross_Scanner`, runs offline startup checks, and creates Desktop and Start Menu shortcuts plus a Windows Installed Apps entry.
@@ -82,7 +84,7 @@ A price jump can cross the EMAs without a received quote satisfying the proximit
 
 Rank only fresh ARMED candidates by direction-aligned EMA9 chart-angle strength, descending: positive angle for LONG, negative angle multiplied by minus one for SHORT. Retain the signed angle in the display. Separate Bullish and Bearish views use the same rule; a combined view sorts by direction-aligned magnitude. Break equal-strength ties by smaller gap percentage, then symbol. Show crossing events separately so historical crossings cannot dominate the ARMED opportunity list.
 
-The ranked list can contain every qualifying stock; no old Top 7/Top 8 restriction is inherited. The table refreshes at most once per second while quote evaluation remains event-driven. Emit an event on state transition and avoid duplicate alert sounds for unchanged states. Initial observations are clearly labelled, with crossing times recorded only when actually observed.
+The ranked board shows up to the Top 20 qualifying stocks, after filtering for All, Bullish or Bearish. It shows fewer when fewer qualify, without adding WATCHING or PAUSED stocks. Full-universe scanning, readiness, charts and events continue independently of the display limit. The table refreshes at most once per second while quote evaluation remains event-driven. Emit an event on state transition and avoid duplicate alert sounds for unchanged states. Initial observations are clearly labelled, with crossing times recorded only when actually observed.
 
 Both LONG and SHORT rules require fresh valid quotes. Initially use a 15-second freshness ceiling, reject quotes more than two seconds ahead of local/server time or arriving out of order, and gate live signals on the broker's normal NSE equity trading-session status. These operational checks are distinct from angle/proximity qualification. Retain quotes/history for diagnosis but label non-ready rows PAUSED.
 
@@ -92,7 +94,7 @@ Both LONG and SHORT rules require fresh valid quotes. Initially use a 15-second 
 - Exclude index options, expired contracts, unresolved underlyings, and duplicate symbols. Check expiry dates in IST.
 - Display eligible, subscribed, receiving-data, ready, and paused counts, plus per-stock exclusion/recovery reasons. The count follows current exchange eligibility and is not silently forced to 210.
 - Use one Upstox V3 streaming connection and background REST requests for historical/backfill data with conservative bounded concurrency and rate limiting. Validate account/feed subscription limits during live Windows testing.
-- Accept the user's Upstox access token in a masked input, normalize a pasted Bearer prefix, and retain it in memory only. Do not write tokens or authorized WebSocket URLs to settings, logs, test output, or diagnostic exports.
+- Accept the user's Upstox access token in a masked input and normalize a pasted Bearer prefix. With Remember token disabled, retain it in memory only. When enabled, write only a current-user Windows DPAPI protected binary blob to a separate data file, and a Boolean preference to settings. Restore the masked input on next launch without connecting automatically. Unticking the option removes the protected file; corrupt/unavailable protection never falls back to plaintext. Tokens still expire and must be replaced when Upstox requires it. Do not write tokens or authorized WebSocket URLs to settings, logs, test output, or diagnostic exports.
 - No shared server, cloud account registration, or order API is required.
 
 ## Interface

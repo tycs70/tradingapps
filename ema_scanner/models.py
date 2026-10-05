@@ -39,6 +39,7 @@ class Settings:
     chart_bars: int = 60
     angle_intervals: int = 2
     fresh_seconds: int = 15
+    remember_token: bool = False
 
     def __post_init__(self):
         if not math.isfinite(self.proximity_pct) or not .001 <= self.proximity_pct <= .5:
@@ -47,6 +48,8 @@ class Settings:
             raise ValueError('Chart bars: 20–120; angle intervals: 1–5.')
         if self.fresh_seconds != 15:
             raise ValueError('Quote freshness is fixed at 15 seconds.')
+        if not isinstance(self.remember_token,bool):
+            raise ValueError('Remember token must be enabled or disabled.')
 
 
 @dataclass(frozen=True)
