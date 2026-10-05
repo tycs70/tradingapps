@@ -1,6 +1,6 @@
 # EMA Pre-Cross Scanner Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deliver an independent Windows installer and Desktop shortcut for the approved Upstox EMA9/EMA21 scanner.
 
@@ -39,11 +39,11 @@
 
 **Interfaces:** Produces `Candle`, `Instrument`, `Settings`, `Snapshot`, `Event`; `EMAHistory(candles).snapshot(price, quote_time, settings) -> Snapshot`; `qualification(snapshot, settings) -> str | None`; `SignalMachine.observe(snapshot, initial=False) -> list[Event]`, `.closed(snapshot)`, `.pause(reason)`; `rank_armed(snapshots) -> list[Snapshot]`.
 
-- [ ] Write tests for exact EMA recursion and repeat ticks; rendered chord geometry and scale hold/reset; bullish/bearish mirroring; proximity/convergence/equality; crossing, reversal, confirmation, cancellation and startup deduplication.
-- [ ] Run `python3 -m unittest tests.test_strategy -v`. Expected: missing-module FAIL before implementation.
-- [ ] Implement the interfaces above. Keep completed EMA series separate from provisional values, reference mapping identical for calculation/rendering, and all state changes explicit.
-- [ ] Run `python3 -m unittest tests.test_strategy -v`. Expected: all PASS.
-- [ ] Commit `feat: implement mirrored EMA pre-cross signals and chart geometry`.
+- [x] Write tests for exact EMA recursion and repeat ticks; rendered chord geometry and scale hold/reset; bullish/bearish mirroring; proximity/convergence/equality; crossing, reversal, confirmation, cancellation and startup deduplication.
+- [x] Run `python3 -m unittest tests.test_strategy -v`. Expected: missing-module FAIL before implementation.
+- [x] Implement the interfaces above. Keep completed EMA series separate from provisional values, reference mapping identical for calculation/rendering, and all state changes explicit.
+- [x] Run `python3 -m unittest tests.test_strategy -v`. Expected: all PASS.
+- [x] Commit `feat: implement mirrored EMA pre-cross signals and chart geometry`.
 
 ### Task 2: Upstox boundary, eligible universe and candle continuity
 
@@ -51,11 +51,11 @@
 
 **Interfaces:** Consumes Task 1 records. Produces `eligible_stocks(master, today) -> (list[Instrument], list[str])`; `parse_candles(rows, now) -> list[Candle]`; `MinuteBook.update(rows, current_bucket) -> (list[Candle], bool)`; `Broker(token).universe()`, `.history(key, now)`, `.stream(keys, message, status)`, `.disconnect()`; `parse_feed(message) -> (quotes, minutes, market_status)`.
 
-- [ ] Write tests for CE/PE eligibility, expired/index/unmapped exclusions; malformed/non-finite candles; contiguous minute aggregation and revisions/gaps; initial feed nesting, timestamp and market status; rate limiting and token normalization without logging.
-- [ ] Run `python3 -m unittest tests.test_data -v`. Expected: missing-module FAIL.
-- [ ] Implement one V3 stream and rate-limited bounded requests with TLS verification. Historical five-minute data covers prior/current sessions and excludes forming candles. Reject irregular or incomplete current-session coverage.
-- [ ] Run `python3 -m unittest tests.test_data -v`. Expected: all PASS.
-- [ ] Commit `feat: add Upstox data adapter and validated option stock universe`.
+- [x] Write tests for CE/PE eligibility, expired/index/unmapped exclusions; malformed/non-finite candles; contiguous minute aggregation and revisions/gaps; initial feed nesting, timestamp and market status; rate limiting and token normalization without logging.
+- [x] Run `python3 -m unittest tests.test_data -v`. Expected: missing-module FAIL.
+- [x] Implement one V3 stream and rate-limited bounded requests with TLS verification. Historical five-minute data covers prior/current sessions and excludes forming candles. Reject irregular or incomplete current-session coverage.
+- [x] Run `python3 -m unittest tests.test_data -v`. Expected: all PASS.
+- [x] Commit `feat: add Upstox data adapter and validated option stock universe`.
 
 ### Task 3: Scanner orchestration and safe persistence
 
@@ -63,11 +63,11 @@
 
 **Interfaces:** Consumes Tasks 1/2. Produces `Scanner(settings, broker_factory=Broker).connect(token)`, `.disconnect()`, `.snapshot() -> dict`, `.set_settings(settings)`, `.close()`. Worker and callback generation guards protect reconnects; UI sees copied immutable rows/events. `SettingsStore(path).load()/save(settings)` and `InstanceLock(path)` are independent of old apps.
 
-- [ ] Write tests with fake broker/clock for stale/future/out-of-order quotes; reconnect, overflow, initial observation, history failures; closed market; independent symbol recovery; all 210 candidates and ordered transition events. Settings tests reject saved tokens and corrupt values.
-- [ ] Run `python3 -m unittest tests.test_scanner -v`. Expected: missing-module FAIL.
-- [ ] Implement coordinator with one processing thread, at most four history workers, bounded event queue, stale-data checks, and asynchronous event logging. A paused symbol resets its observation baseline when recovered.
-- [ ] Run `python3 -m unittest tests.test_scanner -v` and `python3 tools/benchmark.py`. Expected: all PASS; 210-stock quote-to-event processing p99 below one second without dropped transitions on this cloud host.
-- [ ] Commit `feat: coordinate streaming signals with explicit data readiness`.
+- [x] Write tests with fake broker/clock for stale/future/out-of-order quotes; reconnect, overflow, initial observation, history failures; closed market; independent symbol recovery; all 210 candidates and ordered transition events. Settings tests reject saved tokens and corrupt values.
+- [x] Run `python3 -m unittest tests.test_scanner -v`. Expected: missing-module FAIL.
+- [x] Implement coordinator with one processing thread, at most four history workers, bounded event queue, stale-data checks, and asynchronous event logging. A paused symbol resets its observation baseline when recovered.
+- [x] Run `python3 -m unittest tests.test_scanner -v` and `python3 tools/benchmark.py`. Expected: all PASS; 210-stock quote-to-event processing p99 below one second without dropped transitions on this cloud host.
+- [x] Commit `feat: coordinate streaming signals with explicit data readiness`.
 
 ### Task 4: Windows desktop board and inspectable chart
 
@@ -75,11 +75,11 @@
 
 **Interfaces:** Consumes `Scanner.snapshot()` and Task 1 chart geometry. Produces `App(root, scanner, store)`, masked token connection, ranking filters, selected-stock chart, events, settings and diagnostics. Entry point manages instance lock and startup errors without token exposure.
 
-- [ ] Write a UI smoke test using an injected fake scanner: both-direction rows, filter, exact chord endpoints/aspect, closure clears rows, setting validation, close/disconnect. Add offline import/installation check.
-- [ ] Run `python3 -m unittest tests.test_ui -v`. Expected: missing-module FAIL; use an offscreen display for actual widgets if available.
-- [ ] Implement Tk UI on the main thread, snapshots refreshed once per second, coherent reference plot, all stocks/reasons visible in Diagnostics, no network until Connect.
-- [ ] Run full unittest suite and offscreen UI smoke, plus `python3 verify_install.py --no-display`. Expected: PASS; record any unavailable native Windows checks.
-- [ ] Commit `feat: add Windows desktop scanner board and reference chart`.
+- [x] Write a UI smoke test using an injected fake scanner: both-direction rows, filter, exact chord endpoints/aspect, closure clears rows, setting validation, close/disconnect. Add offline import/installation check.
+- [x] Run `python3 -m unittest tests.test_ui -v`. Expected: missing-module FAIL; use an offscreen display for actual widgets if available.
+- [x] Implement Tk UI on the main thread, snapshots refreshed once per second, coherent reference plot, all stocks/reasons visible in Diagnostics, no network until Connect.
+- [x] Run full unittest suite and offscreen UI smoke, plus `python3 verify_install.py --no-display`. Expected: PASS; record any unavailable native Windows checks.
+- [x] Commit `feat: add Windows desktop scanner board and reference chart`.
 
 ### Task 5: Offline installer and downloadable release
 
@@ -87,9 +87,9 @@
 
 **Interfaces:** Consumes complete app and verified runtime archive. Produces `dist/EMA_PreCross_Scanner_1.0.0_Windows_x64.zip`, fully bundled pinned Windows wheels and checksummed release tree.
 
-- [ ] Write package-verifier tests for unsafe paths, altered/missing files, wheel/runtime completeness and source-only token exclusion. Exercise installer syntax with PowerShell when available.
-- [ ] Run `python3 -m unittest tests.test_package -v`. Expected: missing-module FAIL.
-- [ ] Bundle Windows-compatible wheels, convert verified private runtime to ZIP, build SHA-256 manifest. Installer verifies all content, stages offline pip install/startup checks, preserves own data, refuses running instance, atomically swaps with rollback, and creates both shortcuts/uninstall registration. Uninstall affects only owned path.
-- [ ] Run full suite, 210-stock benchmark, package integrity verification, PowerShell parse check and offscreen desktop startup. Expected: PASS; native Windows and authenticated Upstox tests explicitly unverified unless an execution route is available.
-- [ ] Commit `build: package independent offline Windows installer`.
-- [ ] Run one fresh whole-branch code review against the spec and Review Focus; fix important findings with a failing regression test and full green suite. Deliver ZIP, digest, brief installation steps and honest validation limits.
+- [x] Write package-verifier tests for unsafe paths, altered/missing files, wheel/runtime completeness and source-only token exclusion. Exercise installer syntax with PowerShell when available.
+- [x] Run `python3 -m unittest tests.test_package -v`. Expected: missing-module FAIL.
+- [x] Bundle Windows-compatible wheels, convert verified private runtime to ZIP, build SHA-256 manifest. Installer verifies all content, stages offline pip install/startup checks, preserves own data, refuses running instance, atomically swaps with rollback, and creates both shortcuts/uninstall registration. Uninstall affects only owned path.
+- [x] Run full suite, 210-stock benchmark, package integrity verification, PowerShell parse check and offscreen desktop startup. Expected: PASS; native Windows and authenticated Upstox tests explicitly unverified unless an execution route is available.
+- [x] Commit `build: package independent offline Windows installer`.
+- [x] Run one fresh whole-branch code review against the spec and Review Focus; fix important findings with a failing regression test and full green suite. Deliver ZIP, digest, brief installation steps and honest validation limits.

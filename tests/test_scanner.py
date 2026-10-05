@@ -5,11 +5,13 @@ import time
 import unittest
 from datetime import timedelta
 from unittest.mock import Mock
+from dataclasses import replace
 
 from ema_scanner.models import Settings, Instrument
 from ema_scanner.broker import FeedQuote
 from ema_scanner.scanner import Scanner
 from ema_scanner.storage import SettingsStore, InstanceLock
+from ema_scanner.indicators import EMAHistory
 from tests.test_data import NOW, session, minute
 
 
@@ -86,6 +88,37 @@ class ScannerTest(unittest.TestCase):
         self.assertFalse(self.s.states['A'].ready)
         self.assertIsNone(self.s.states['A'].machine._relation)
         self.assertIn('overflow',self.s.states['A'].reason)
+
+    def test_overflow_history_never_replays_a_pre_break_quote(self):
+        self.s._quote(self.quote(price=90))
+        self.s.overflow=True;self.s._maintenance()
+        self.clock.return_value=NOW+timedelta(seconds=1)
+        self.s._process('history',('A',self.s.epoch,0,self.bars,None),1)
+        self.clock.return_value=NOW+timedelta(seconds=2)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        self.assertNotIn('CROSSED',[e.state for e in self.s.events])
+        self.clock.return_value=NOW+timedelta(seconds=3)
+        self.s._quote(self.quote(price=90,stamp=self.clock()))
+        self.assertEqual(self.s.events[-1].state,'CROSSED')
+        self.assertEqual(self.s.events[-1].side,'SHORT')
+
+    def test_rollover_excludes_old_armed_row_even_before_maintenance(self):
+        state=self.s.states['A']
+        bars=[]
+        for i,c in enumerate(self.bars):
+            price=100-max(0,i-145)*.002
+            bars.append(replace(c,open=price,high=price+.1,low=price-.1,close=price))
+        state.history=EMAHistory(bars,state.instrument)
+        h=state.history
+        cross=(h.ema21[-1]*10/11-h.ema9[-1]*.8)/(.2-1/11)
+        self.clock.return_value=NOW+timedelta(minutes=4,seconds=59)
+        self.s._quote(self.quote(price=cross-.001,stamp=self.clock()))
+        self.assertEqual(len(self.s.snapshot()['armed']),1)
+        self.clock.return_value=NOW+timedelta(minutes=5,seconds=1)
+        self.assertEqual(self.s.snapshot()['armed'],[])
+        self.s._maintenance()
+        self.assertFalse(state.ready)
+        self.assertIn('candle',state.reason.lower())
 
     def test_history_failure_is_visible_without_sensitive_exception(self):
         self.s._process('history',('A',self.s.epoch,0,None,RuntimeError('secret_token')),1)

@@ -149,13 +149,17 @@ class Broker:
         validate_history(candles,now)
         return candles
 
+    def _authorize_url(self):
+        if self._stop.is_set(): raise RuntimeError('Connection cancelled.')
+        url = self._json('https://api.upstox.com/v3/feed/market-data-feed/authorize')['data']['authorized_redirect_uri']
+        if not isinstance(url,str) or not url.startswith('wss://'):
+            raise RuntimeError('Upstox returned an invalid secure feed address.')
+        return url
+
     def stream(self, keys, message, status):
         # SDK 2.23.0's feeder sets CERT_NONE. Use its protobuf decoder with
         # our own verified transport rather than inheriting that behavior.
-        url = self._json('https://api.upstox.com/v3/feed/market-data-feed/authorize')['data']['authorized_redirect_uri']
-        if not url.startswith('wss://'):
-            raise RuntimeError('Upstox returned an invalid secure feed address.')
-        self._stream = SecureStream(url,keys,message,status)
+        self._stream = SecureStream(self._authorize_url(),keys,message,status,renew_url=self._authorize_url)
         def run():
             try:
                 if not self._stop.is_set(): self._stream.run()
@@ -172,10 +176,11 @@ class Broker:
 
 
 class SecureStream:
-    def __init__(self, url, keys, message, status, factory=websocket.WebSocketApp):
+    def __init__(self, url, keys, message, status, factory=websocket.WebSocketApp,renew_url=None):
         self.url,self.keys,self.message,self.status,self.factory = url,keys,message,status,factory
         self.stop = threading.Event()
         self.ws = None
+        self.renew_url=renew_url;self.attempted=False
 
     def on_open(self, ws):
         if self.stop.is_set():
@@ -196,6 +201,10 @@ class SecureStream:
 
     def run_once(self):
         if self.stop.is_set(): return
+        if self.attempted and self.renew_url:
+            self.url=self.renew_url()
+        self.attempted=True
+        if self.stop.is_set():return
         self.ws = self.factory(self.url,on_open=self.on_open,on_message=self.on_message,
                                on_error=lambda *args:self.status('error'),
                                on_close=lambda *args:self.status('closed'))
@@ -205,7 +214,8 @@ class SecureStream:
     def run(self):
         for attempt in range(21):
             if self.stop.is_set(): break
-            self.run_once()
+            try:self.run_once()
+            except Exception:self.status('error')
             if self.stop.wait(5): break
         if not self.stop.is_set(): self.status('stopped')
 
@@ -213,3 +223,4 @@ class SecureStream:
         self.stop.set()
         if self.ws: self.ws.close()
         self.url = ''
+        self.renew_url=None

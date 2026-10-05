@@ -1,6 +1,6 @@
 """Symmetric provisional pre-cross rules; no ATR and no order API."""
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .models import Event, Settings, Snapshot
 
@@ -73,11 +73,17 @@ class SignalMachine:
     def closed(self, s: Snapshot) -> list[Event]:
         side = self._cross_side
         self._cross_side = None
+        relation = (s.ema9 > s.ema21) - (s.ema9 < s.ema21)
+        if relation:
+            self._relation = relation
+        elif self._relation is None:
+            self._relation = 0
         if not side:
             return []
         correct = s.ema9 > s.ema21 if side == 'LONG' else s.ema9 < s.ema21
         state = 'CONFIRMED' if correct else 'REVERSED'
-        return [self._event(state, side, s.bucket, 'Completed five-minute candle verified.', s.angle)]
+        reason = 'Completed five-minute candle verified.' if correct else 'Completed candle did not retain the crossover side.'
+        return [self._event(state, side, s.bucket + timedelta(minutes=5), reason, s.angle)]
 
     def pause(self, reason: str, time: datetime) -> list[Event]:
         changed = self.state != 'PAUSED' or self.reason != reason

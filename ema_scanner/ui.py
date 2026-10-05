@@ -24,7 +24,7 @@ class App:
     def __init__(self,root,scanner,store):
         self.root,self.scanner,self.store=root,scanner,store
         self.settings=store.load();self.selected=None;self.current=None;self.after_id=None;self.closed=False
-        self._event_count=0;self._last_event=None
+        self._event_count=0;self._last_event=None;self._event_sequence=0
         root.title(f'EMA Pre-Cross Scanner  ·  {VERSION}')
         root.geometry('1280x920');root.minsize(1050,760);root.configure(bg=BG)
         root.protocol('WM_DELETE_WINDOW',self.close)
@@ -196,9 +196,12 @@ class App:
             self.event_table.delete(*self.event_table.get_children())
             for event in reversed(events):
                 self.event_table.insert('','end',values=(fmt_time(event.time),event.symbol,event.state,event.side,f'{event.angle:+.2f}°',event.reason),tags=(event.side,))
-            if self.alerts.get() and self._last_event is not None and signature and not signature.initial and signature.state in ('ARMED','CROSSED'):
-                self.root.bell()
             self._last_event=signature
+        new_events=[e for e in data['events'] if e.sequence>self._event_sequence]
+        if new_events:
+            if self.alerts.get() and data['connected'] and any(not e.initial and e.state in ('ARMED','CROSSED') for e in new_events):
+                self.root.bell()
+            self._event_sequence=max(e.sequence for e in new_events)
         self.stock_table.delete(*self.stock_table.get_children())
         for symbol,ready,reason in data['stocks']:
             self.stock_table.insert('','end',values=(symbol,'READY' if ready else 'PAUSED',reason))

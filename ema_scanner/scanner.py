@@ -36,7 +36,7 @@ class Scanner:
         self.lock=threading.RLock()
         self.queue=queue.Queue(maxsize=queue_size)
         self.stop=threading.Event()
-        self.generation=0;self.epoch=0;self.overflow=False
+        self.generation=0;self.epoch=0;self.overflow=False;self.event_sequence=0
         self.connected=False;self.connecting=False
         self.market_status='UNKNOWN';self.connection_status='Disconnected'
         self.states={};self.events=deque(maxlen=2000);self.diagnostics=deque(maxlen=300)
@@ -88,6 +88,8 @@ class Scanner:
 
     def _emit(self,events):
         for event in events:
+            self.event_sequence+=1
+            event=replace(event,sequence=self.event_sequence)
             self.events.append(event)
             if self.logger: self.logger.write(event)
 
@@ -145,11 +147,11 @@ class Scanner:
                     if error: raise ValueError('history request failed')
                     validate_history(bars,self.clock())
                     state.history=EMAHistory(bars,state.instrument)
-                    state.reason='Waiting for a fresh quote';state.retry_at=None
+                    state.last_quote=None;state.retry_at=None
+                    self._pause(state,'Waiting for a fresh quote after history validation')
                 except (ValueError,TypeError):
                     state.history=None;state.retry_at=self.clock()+timedelta(seconds=30)
                     self._pause(state,'Unable to validate history; retrying in 30 seconds')
-                if state.history and state.last_quote: self._quote(state.last_quote,initial=True)
             elif kind=='feed': self._feed(payload)
 
     def _feed(self,message):
@@ -229,7 +231,7 @@ class Scanner:
                     except queue.Empty: break
                 self.diagnostics.append('Input queue overflow: all observations paused and histories rescheduled.')
                 for state in self.states.values():
-                    state.history=None;state.pending=False;state.retry_at=None;state.minutes=MinuteBook()
+                    state.history=None;state.pending=False;state.retry_at=None;state.minutes=MinuteBook();state.last_quote=None
                     self._pause(state,'Feed queue overflow; reconciling history')
             now=self.clock()
             for state in self.states.values():
@@ -237,6 +239,9 @@ class Scanner:
                     self._pause(state,'Market closed or connection unavailable')
                 elif state.ready and state.last_quote and (now-state.last_quote.time).total_seconds()>15:
                     self._pause(state,'Quote older than 15 seconds')
+                elif state.ready and (not state.history or not self._covers(state.history,now) or
+                                      not state.row or state.row.bucket!=bucket_time(now)):
+                    self._pause(state,'Missing completed candle or current quote; backfill required')
                 if self.connected and regular_session(now) and self.market_status=='NORMAL_OPEN' and (not state.history or not self._covers(state.history,now)):
                     self._recover(state)
 
@@ -262,16 +267,20 @@ class Scanner:
     def snapshot(self) -> dict:
         with self.lock:
             now=self.clock()
-            rows=[s.row for s in self.states.values() if s.row and s.ready and s.last_quote and
-                  -2<=(now-s.last_quote.time).total_seconds()<=15 and self.connected and
-                  self.market_status=='NORMAL_OPEN' and regular_session(now)]
+            def actionable(s):
+                return bool(s.row and s.ready and s.last_quote and s.history and
+                            s.row.bucket==bucket_time(now) and self._covers(s.history,now) and
+                            -2<=(now-s.last_quote.time).total_seconds()<=15 and self.connected and
+                            self.market_status=='NORMAL_OPEN' and regular_session(now))
+            rows=[s.row for s in self.states.values() if actionable(s)]
             receiving=sum(bool(s.last_quote and -2<=(now-s.last_quote.time).total_seconds()<=15) for s in self.states.values())
             ready=len(rows)
             return {'connected':self.connected,'connecting':self.connecting,'status':self.connection_status,
                     'market':self.market_status,'settings':self.settings,'rows':rows,'armed':rank_armed(rows),
                     'counts':{'eligible':len(self.states),'subscribed':len(self.states) if self.connected else 0,
                               'receiving':receiving,'ready':ready,'paused':len(self.states)-ready},
-                    'stocks':[(s.instrument.symbol,s.ready,s.reason) for s in self.states.values()],
+                    'stocks':[(s.instrument.symbol,actionable(s),s.reason if not s.ready or actionable(s) else
+                               'Waiting for current quote / verified candle') for s in self.states.values()],
                     'events':list(self.events),'diagnostics':list(self.diagnostics)}
 
     def close(self):

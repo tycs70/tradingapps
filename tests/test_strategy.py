@@ -93,6 +93,24 @@ class RulesTest(unittest.TestCase):
 
 
 class StateTest(unittest.TestCase):
+    def test_verified_close_updates_baseline_in_both_directions(self):
+        for side in ['LONG','SHORT']:
+            before=candidate(side)
+            after=replace(before,ema9=100.1 if side=='LONG' else 99.9,ema21=100)
+            m=SignalMachine('TEST',Settings());m.observe(before);m.observe(after);m.closed(before)
+            self.assertEqual(m.observe(after)[-1].state,'CROSSED')
+            self.assertEqual(m.side,side)
+            n=SignalMachine('TEST',Settings());n.observe(before);n.observe(after);n.closed(before)
+            self.assertNotIn('CROSSED',[e.state for e in n.observe(before)])
+
+    def test_confirmation_is_timestamped_at_bar_completion(self):
+        before=candidate()
+        after=replace(before,ema9=100.1,ema21=100,quote_time=NOW+timedelta(minutes=4))
+        m=SignalMachine('TEST',Settings());m.observe(before);m.observe(after)
+        event=m.closed(after)[-1]
+        self.assertEqual(event.time,NOW+timedelta(minutes=5))
+        self.assertGreater(event.time,after.quote_time)
+
     def test_initial_armed_is_labelled_and_unchanged_does_not_repeat(self):
         m = SignalMachine('TEST', Settings())
         events = m.observe(candidate(), initial=True)

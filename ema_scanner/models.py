@@ -88,3 +88,4 @@ class Event:
     reason: str
     angle: float = 0
     initial: bool = False
+    sequence: int = 0

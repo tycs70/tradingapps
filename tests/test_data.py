@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from ema_scanner.models import Candle, IST
 from ema_scanner.universe import eligible_stocks
@@ -91,6 +91,26 @@ class HistoryTest(unittest.TestCase):
 
 
 class BrokerTest(unittest.TestCase):
+    def test_broker_renews_authorized_url_between_connection_attempts(self):
+        urls=[]
+        class FakeStream:
+            def __init__(self,url,*args,**kwargs):self.url=url;self.renew=kwargs.get('renew_url')
+            def run(self):
+                urls.append(self.url)
+                urls.append(self.renew() if self.renew else self.url)
+            def disconnect(self):pass
+        class InlineThread:
+            def __init__(self,target,**kwargs):self.target=target
+            def start(self):self.target()
+        b=Broker('test-token')
+        b._json=Mock(side_effect=[{'data':{'authorized_redirect_uri':'wss://example.invalid/one'}},
+                                 {'data':{'authorized_redirect_uri':'wss://example.invalid/two'}}])
+        with patch('ema_scanner.broker.SecureStream',FakeStream),patch('ema_scanner.broker.threading.Thread',InlineThread):
+            b.stream(['A'],Mock(),Mock())
+        self.assertEqual(urls,['wss://example.invalid/one','wss://example.invalid/two'])
+        self.assertEqual(b._json.call_count,2)
+        b.disconnect()
+
     def test_token_prefix_and_no_response_body_leak(self):
         self.assertEqual(normalize_token('  Bearer abc.def.xyz  '),'abc.def.xyz')
         with self.assertRaises(ValueError): normalize_token('abc\nsecret')

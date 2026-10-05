@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import Mock
 
 from ema_scanner.models import Settings
+from ema_scanner.models import Event
+from ema_scanner.scanner import Scanner
 from ema_scanner.storage import SettingsStore
 from ema_scanner.ui import App, plot_bounds
 from tests.test_strategy import candidate
@@ -69,6 +71,23 @@ class DesktopTest(unittest.TestCase):
     def test_close_cleans_up_scanner(self):
         self.app.close()
         self.scanner.close.assert_called_once()
+
+    def test_alert_checks_every_new_event_and_deduplicates_batches(self):
+        from tests.test_strategy import NOW
+        source=Scanner(Settings(),start_worker=False)
+        try:
+            self.root.bell=Mock()
+            source._emit([Event('ALONG','ARMED','LONG',NOW,'Live provisional signal'),
+                          Event('OTHER','PAUSED','',NOW,'Stale quote')])
+            self.data['events']=list(source.events)
+            self.app.refresh()
+            self.root.bell.assert_called_once()
+            self.app.refresh()
+            self.root.bell.assert_called_once()
+            source._emit([Event('OTHER','ARMED','SHORT',NOW,'Initial',initial=True)])
+            self.data['events']=list(source.events);self.app.refresh()
+            self.root.bell.assert_called_once()
+        finally:source.close()
 
 
 if __name__=='__main__':unittest.main()
