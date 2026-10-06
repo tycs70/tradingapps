@@ -25,6 +25,7 @@ def main(argv=None):
     data=data_directory()
     lock=None;scanner=None;logger=None;trend_store=None;root=None
     def record_error(label,exc_type):
+        if args.demo:return
         # Generated label and exception type only: broker bodies/token values never logged.
         try:
             data.mkdir(parents=True,exist_ok=True)
@@ -42,7 +43,9 @@ def main(argv=None):
         def safe_error(exc_type,exc,tb):
             record_error('GUI error',exc_type)
             try:
-                messagebox.showerror('Trend Chase Version 1','A desktop error occurred. Restart the app; see data/startup-error.txt.',parent=root)
+                text=('A desktop error occurred in the offline demo. Restart the demo.' if args.demo else
+                      'A desktop error occurred. Restart the app; see data/startup-error.txt.')
+                messagebox.showerror('Trend Chase Version 1',text,parent=root)
             except Exception:pass
         root.report_callback_exception=safe_error
         store=SettingsStore(data/'settings.json')
@@ -56,7 +59,9 @@ def main(argv=None):
         root.mainloop()
     except Exception as exc:
         record_error('Startup error',type(exc))
-        try:messagebox.showerror('Trend Chase Version 1','Startup failed. See data/startup-error.txt or reinstall the app.',parent=root)
+        text=('Offline demo startup failed. Restart the demo or reinstall the app.' if args.demo else
+              'Startup failed. See data/startup-error.txt or reinstall the app.')
+        try:messagebox.showerror('Trend Chase Version 1',text,parent=root)
         except Exception:pass
         raise SystemExit(1) from None
     finally:

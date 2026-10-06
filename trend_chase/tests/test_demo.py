@@ -57,6 +57,47 @@ class DemoDesktopTest(unittest.TestCase):
             entry.main(['--demo'])
             self.assertEqual(list(Path(folder).iterdir()),[])
 
+    def test_demo_startup_error_never_creates_or_overwrites_live_data(self):
+        entry=self.entrypoint()
+        for existing in (False,True):
+            with self.subTest(existing=existing),tempfile.TemporaryDirectory() as folder:
+                data=Path(folder)/'Trend_Chase_V1'/'data'
+                error_file=data/'startup-error.txt'
+                if existing:
+                    data.mkdir(parents=True);error_file.write_text('Existing live diagnostic',encoding='utf-8')
+                with patch('ema_scanner.storage.data_directory',return_value=data), \
+                     patch('tkinter.Tk',side_effect=RuntimeError('private-token')), \
+                     patch('tkinter.messagebox.showerror') as dialog:
+                    with self.assertRaises(SystemExit) as raised:entry.main(['--demo'])
+                    self.assertEqual(raised.exception.code,1)
+                if existing:self.assertEqual(error_file.read_text(),'Existing live diagnostic')
+                else:self.assertFalse(data.exists())
+                self.assertNotIn('startup-error.txt',str(dialog.call_args))
+                self.assertNotIn('private-token',str(dialog.call_args))
+
+    def test_demo_callback_error_never_creates_or_overwrites_live_data(self):
+        entry=self.entrypoint()
+        def launch(root,scanner,store,**kwargs):
+            app=App(root,scanner,store,**kwargs)
+            def stop():
+                root.report_callback_exception(ValueError,ValueError('private-token'),None)
+                app.close()
+            root.after(80,stop)
+            return app
+        for existing in (False,True):
+            with self.subTest(existing=existing),tempfile.TemporaryDirectory() as folder:
+                data=Path(folder)/'Trend_Chase_V1'/'data'
+                error_file=data/'startup-error.txt'
+                if existing:
+                    data.mkdir(parents=True);error_file.write_text('Existing live diagnostic',encoding='utf-8')
+                with patch('ema_scanner.storage.data_directory',return_value=data), \
+                     patch('ema_scanner.ui.App',side_effect=launch),patch('tkinter.messagebox.showerror') as dialog:
+                    entry.main(['--demo'])
+                if existing:self.assertEqual(error_file.read_text(),'Existing live diagnostic')
+                else:self.assertFalse(data.exists())
+                self.assertNotIn('startup-error.txt',str(dialog.call_args))
+                self.assertNotIn('private-token',str(dialog.call_args))
+
     def test_live_entrypoint_closes_real_workers_and_logs_safe_callback_type(self):
         entry=self.entrypoint();created=[]
         def launch(root,scanner,store,**kwargs):
