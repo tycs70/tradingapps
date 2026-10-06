@@ -317,6 +317,70 @@ class TrendScannerTest(unittest.TestCase):
         self.assertEqual(self.s.snapshot()['trends_long'],[])
         self.assertEqual(self.s.trends.candidates,{})
 
+    def test_new_day_complete_prior_history_reconciles_before_opening_trend(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from ema_scanner.models import Candle
+        import threading
+        full=session(1)+session(2)+session(5)
+        self.clock.return_value=NOW.replace(hour=15,minute=30)
+        self.s._process('history',('A',self.s.epoch,0,full,None),1)
+        self.s.states={'A':self.s.states['A']}
+        requested=threading.Event()
+        class HistoryBroker:
+            def history(inner,key,now):
+                requested.set();return full
+            def disconnect(inner): pass
+        self.s.broker=HistoryBroker()
+        self.s.executor=ThreadPoolExecutor(max_workers=1)
+        opening=(NOW+timedelta(days=1)).replace(hour=9,minute=16)
+        self.clock.return_value=opening
+        self.s._quote(self.quote(price=90,stamp=self.clock()))
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        self.assertEqual(self.s.snapshot()['trend_counts']['total'],0)
+        self.assertFalse(self.s.states['A'].ready)
+        self.assertIsNone(self.s.states['A'].history)
+        self.assertTrue(requested.wait(2),'New-day history recovery was not requested')
+        kind,payload,generation=self.s.queue.get(timeout=2)
+        self.assertEqual(kind,'history')
+        self.s._process(kind,payload,generation)
+        self.assertTrue(self.s.states['A'].trend_validated)
+        self.assertEqual(self.s.snapshot()['trends_long'],[])
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        self.assertEqual(self.s.snapshot()['trend_counts']['total'],0,
+                         'History must not replay pre-validation quote crossings')
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=90,stamp=self.clock()))
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        row=self.s.snapshot()['trends_long'][0]
+        self.assertEqual(row.status,'PROVISIONAL')
+        self.assertEqual(row.crossover_time,self.clock())
+        self.assertEqual(row.candidate.checked_through,full[-1].time)
+    def test_new_day_incomplete_prior_history_cannot_supply_a_frozen_cross(self):
+        old=self.s.states['A'].history
+        opening=(NOW+timedelta(days=1)).replace(hour=9,minute=16)
+        self.clock.return_value=opening
+        self.s._quote(self.quote(price=90,stamp=self.clock()))
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        self.assertEqual(self.s.snapshot()['trend_counts']['total'],0)
+        self.assertFalse(self.s.states['A'].ready)
+        self.assertIsNone(self.s.states['A'].history)
+        self.s._process('history',('A',self.s.epoch,0,old.candles,None),1)
+        self.assertIsNone(self.s.states['A'].history)
+        self.assertEqual(self.s.snapshot()['trend_counts']['total'],0)
+        full=session(1)+session(2)+session(5)
+        self.s._process('history',('A',self.s.epoch,0,full,None),1)
+        self.assertTrue(self.s.states['A'].trend_validated)
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=90,stamp=self.clock()))
+        self.assertEqual(self.s.snapshot()['trend_counts']['total'],0)
+        self.clock.return_value+=timedelta(seconds=1)
+        self.s._quote(self.quote(price=110,stamp=self.clock()))
+        self.assertEqual(self.s.snapshot()['trends_long'][0].status,'PROVISIONAL')
+
     def test_restart_confirmed_requires_same_day_history_and_fresh_quote(self):
         from ema_scanner.storage import TrendStore
         self.cross();self.clock.return_value=NOW+timedelta(minutes=5)

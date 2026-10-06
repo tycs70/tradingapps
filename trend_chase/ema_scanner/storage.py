@@ -105,6 +105,7 @@ class TrendStore:
         self.queue = queue.Queue()
         self.error = ''
         self._closed = False
+        self._close_lock = threading.Lock()
         self.thread = threading.Thread(target=self._run, name='trend-store', daemon=True)
         self.thread.start()
 
@@ -144,11 +145,14 @@ class TrendStore:
             return []
 
     def save(self, candidates, day):
-        if self._closed: return
         from .models import IST
-        snapshot = tuple(c for c in candidates if c.status == 'CONFIRMED' and
-                         c.crossover_time.astimezone(IST).date() == day)
-        self.queue.put((snapshot,day))
+        # Keep accepted saves ahead of the shutdown sentinel, even if a caller
+        # begins closing while the signal worker queues its final snapshot.
+        with self._close_lock:
+            if self._closed: return
+            snapshot = tuple(c for c in candidates if c.status == 'CONFIRMED' and
+                             c.crossover_time.astimezone(IST).date() == day)
+            self.queue.put((snapshot,day))
 
     def _run(self):
         while True:
@@ -176,7 +180,10 @@ class TrendStore:
         self.queue.join()
 
     def close(self):
-        if self._closed: return
-        self._closed = True
-        self.queue.put(None)
-        self.thread.join(timeout=2)
+        # Called during shutdown, outside the serialized quote path. A closed
+        # queue can still have pending writes: every caller waits for its worker.
+        with self._close_lock:
+            if not self._closed:
+                self._closed = True
+                self.queue.put(None)
+        self.thread.join()

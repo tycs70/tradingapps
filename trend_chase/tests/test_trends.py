@@ -182,6 +182,48 @@ class TrendPersistenceTest(unittest.TestCase):
             self.assertEqual(store.load(NOW.date()+timedelta(days=1)),[])
             store.close();store.close()
 
+    def test_graceful_close_waits_for_ordered_removal_and_concurrent_close(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'trends.json';store=TrendStore(path)
+            store.save([self.candidate()],NOW.date());store.flush()
+            removal_started=threading.Event();release=threading.Event()
+            first_done=threading.Event();second_done=threading.Event()
+            writes=[];original=Path.write_text
+            def controlled_write(target,content,*args,**kwargs):
+                record=json.loads(content);writes.append(len(record['candidates']))
+                if not record['candidates']:
+                    removal_started.set();release.wait()
+                return original(target,content,*args,**kwargs)
+            def close_and_mark(done):
+                store.close();done.set()
+            first=threading.Thread(target=close_and_mark,args=(first_done,),daemon=True)
+            second=threading.Thread(target=close_and_mark,args=(second_done,),daemon=True)
+            with patch.object(Path,'write_text',controlled_write):
+                try:
+                    later=replace(self.candidate(),checked_through=NOW+timedelta(minutes=5))
+                    store.save([later],NOW.date());store.save([],NOW.date())
+                    self.assertTrue(removal_started.wait(2))
+                    self.assertEqual(store.load(NOW.date()),[later])
+                    first.start()
+                    self.assertFalse(first_done.wait(2.2),
+                                     'Graceful close returned while a removal was still pending')
+                    second.start()
+                    self.assertFalse(second_done.wait(.1),
+                                     'Repeated close must wait for the same pending writer')
+                    self.assertTrue(store.thread.is_alive())
+                finally:
+                    release.set()
+                    if first.ident is not None: first.join(2)
+                    if second.ident is not None: second.join(2)
+                    store.close()
+                    store.thread.join(2)
+            self.assertTrue(first_done.is_set());self.assertTrue(second_done.is_set())
+            self.assertFalse(store.thread.is_alive())
+            self.assertEqual(store.queue.unfinished_tasks,0)
+            self.assertEqual(store.load(NOW.date()),[])
+            self.assertEqual(writes,[1,0])
+            store.close()
+
     def test_corrupt_untrusted_and_nonfinite_records_rejected_safely(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'trends.json';store=TrendStore(path)

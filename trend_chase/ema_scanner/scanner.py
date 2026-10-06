@@ -128,9 +128,14 @@ class Scanner:
         day=now.astimezone(IST).date()
         if day != self.trends.day:
             self._emit(self.trends.reset_day(day,now))
+            # Old histories may be incomplete at yesterday's close. Require the
+            # ordinary broker validation before accepting today's opening quotes.
+            self.epoch+=1
             for state in self.states.values():
-                state.ready=False;state.trend_validated=False
-                self._emit(state.machine.pause('New IST trading day',now))
+                state.history=None;state.minutes=MinuteBook();state.last_quote=None
+                state.row=None;state.pending=False;state.retry_at=None
+                state.trend_validated=False;state.trend_quote_time=None
+                self._pause(state,'New IST trading day; reconciling history')
             self._persist_trends()
 
     def _pause(self,state,reason,discard_provisional=True):
