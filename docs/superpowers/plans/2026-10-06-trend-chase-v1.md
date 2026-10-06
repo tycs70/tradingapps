@@ -25,28 +25,28 @@
 ### Task 1: Trend engine, recovery and persistence
 Files: trend_chase/ema_scanner/trends.py, scanner.py, models.py, storage.py; tests/test_trends.py and tests/test_scanner.py.
 Interfaces: TrendCandidate immutable record (key, symbol, side, crossover_time, crossover_angle, status, checked_through); TrendBook methods for observed crossover, verified candle/history, daily reset; scanner.snapshot() adds trends_long, trends_short (list of TrendRow with candidate + snapshot), trend_counts, and safe diagnostic status. Scanner accepts trend_store=None.
-- [ ] Add failing tests for mirrored provisional add/confirm, equality/wick/close removal, immutable rank and top-five replacement.
-- [ ] Implement pure registry and structured trend events with market details; preserve normal scanner.
-- [ ] Add failing recovery tests for missing-minute/backfill confirmation, adverse intervening close, stale hiding and provisional loss on pause.
-- [ ] Integrate with scanner serialized worker and all validated historical replacements; no new crosses from history.
-- [ ] Add asynchronous atomic TrendStore confirmed-only persistence tests: same-day restore, invalid file, new day, no resurrection.
-- [ ] Run full suite and benchmark; write report and commit task files.
+- [x] Add failing tests for mirrored provisional add/confirm, equality/wick/close removal, immutable rank and top-five replacement.
+- [x] Implement pure registry and structured trend events with market details; preserve normal scanner.
+- [x] Add failing recovery tests for missing-minute/backfill confirmation, adverse intervening close, stale hiding and provisional loss on pause.
+- [x] Integrate with scanner serialized worker and all validated historical replacements; no new crosses from history.
+- [x] Add asynchronous atomic TrendStore confirmed-only persistence tests: same-day restore, invalid file, new day, no resurrection.
+- [x] Run full suite and benchmark; write report and commit task files.
 
 ### Task 2: Desktop tables, demo and app identity
 Files: trend_chase/ema_scanner/ui.py, demo.py, __init__.py, credentials.py, storage.py identity, run_app.pyw, tests/test_ui.py, tests/test_demo.py, demo.html.
 Consumes Task 1 scanner trend row interface.
-- [ ] Add failing GUI tests for Top 5 per side, both angles, hidden chart toggle and token defaults/Forget Token.
-- [ ] Build top trend tables above familiar normal scanner; update identity and independent paths; keep geometry.
-- [ ] Add explicitly sample-only Demo tab with five rows per side and demo chart selection; never call broker or persist sample data.
-- [ ] Wire entry point to asynchronous TrendStore; close threads and logger cleanly.
-- [ ] Produce standalone demo.html using sample data matching UI; verify actual GUI rendering and capture demo screenshot.
-- [ ] Run full GUI suite; write report and commit.
+- [x] Add failing GUI tests for Top 5 per side, both angles, hidden chart toggle and token defaults/Forget Token.
+- [x] Build top trend tables above familiar normal scanner; update identity and independent paths; keep geometry.
+- [x] Add explicitly sample-only Demo tab with five rows per side and demo chart selection; never call broker or persist sample data.
+- [x] Wire entry point to asynchronous TrendStore; close threads and logger cleanly.
+- [x] Produce standalone demo.html using sample data matching UI; verify actual GUI rendering and capture demo screenshot.
+- [x] Run full GUI suite; write report and commit.
 
 ### Task 3: Independent Windows release and documentation
 Files: trend_chase/installer/*, tools/build_release.py, verify_install.py, README.md, README_FIRST.txt; releases/Trend_Chase_V1_1.0.0_Windows_x64.zip and SHA256, Trend_Chase_V1_Demo.html and PNG.
-- [ ] Verify existing 1.0.1 release SHA256/manifest and reuse trusted bundled runtime and wheels.
-- [ ] Add package tests for independent names, icon, demo shortcut, retained data and complete required content.
-- [ ] Change per-user installer/uninstaller branding/paths; add an app icon and Start Menu demo shortcut.
-- [ ] Build new manifest/package, verify entire package and checksum; parse installer and run helper suite if supported.
-- [ ] Run fresh full tests, offline GUI startup and benchmark; document actual counts and limitations.
-- [ ] Perform independent whole-change review, address findings, rebuild changed package; deliver download links.
+- [x] Verify existing 1.0.1 release SHA256/manifest and reuse trusted bundled runtime and wheels.
+- [x] Add package tests for independent names, icon, demo shortcut, retained data and complete required content.
+- [x] Change per-user installer/uninstaller branding/paths; add an app icon and Start Menu demo shortcut.
+- [x] Build new manifest/package, verify entire package and checksum; parse installer and run helper suite if supported.
+- [x] Run fresh full tests, offline GUI startup and benchmark; document actual counts and limitations.
+- [x] Perform independent whole-change review, address findings, rebuild changed package; deliver download links.
