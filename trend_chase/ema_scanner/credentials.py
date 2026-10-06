@@ -31,7 +31,7 @@ class WindowsDPAPI:
         source=_DataBlob(len(value),buffer);result=_DataBlob()
         try:
             # CRYPTPROTECT_UI_FORBIDDEN; no machine-wide protection flag.
-            if not operation(ctypes.byref(source),'EMA Pre-Cross Scanner token' if protect else None,
+            if not operation(ctypes.byref(source),'Trend Chase Version 1 token' if protect else None,
                              None,None,None,1,ctypes.byref(result)):
                 raise OSError('Windows could not protect or restore the saved token.')
             return ctypes.string_at(result.pbData,result.cbData)

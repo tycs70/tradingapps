@@ -1,2 +1,2 @@
-"""EMA Pre-Cross Scanner: underlying equity signals, without order execution."""
-VERSION = '1.0.1'
+"""Trend Chase Version 1: underlying equity watchlists, without order execution."""
+VERSION = '1.0.0'

@@ -11,7 +11,7 @@ from .models import Settings
 
 def data_directory() -> Path:
     base = Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.local/share')))
-    return base/'EMA_PreCross_Scanner'/'data'
+    return base/'Trend_Chase_V1'/'data'
 
 
 class SettingsStore:

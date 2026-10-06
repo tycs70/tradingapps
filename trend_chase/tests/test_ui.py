@@ -11,6 +11,7 @@ from ema_scanner.models import Event
 from ema_scanner.scanner import Scanner
 from ema_scanner.storage import SettingsStore
 from ema_scanner.ui import App, plot_bounds
+from ema_scanner.trends import TrendCandidate, TrendRow
 from tests.test_strategy import candidate
 
 
@@ -164,6 +165,57 @@ class DesktopTest(unittest.TestCase):
     def test_close_cleans_up_scanner(self):
         self.app.close()
         self.scanner.close.assert_called_once()
+
+    def test_top_five_tables_display_frozen_and_current_angles(self):
+        rows=[]
+        for i in range(7):
+            snap=replace(self.long,key=f'L{i}',symbol=f'L{i}',angle=7+i)
+            rows.append(TrendRow(TrendCandidate(snap.key,snap.symbol,'LONG',snap.quote_time,40-i,'CONFIRMED',snap.bucket),snap))
+        self.data['trends_long']=rows
+        self.data['trends_short']=[TrendRow(TrendCandidate(self.short.key,self.short.symbol,'SHORT',self.short.quote_time,-30,'PROVISIONAL',self.short.bucket),self.short)]
+        self.app.refresh()
+        self.assertEqual(len(self.app.bullish_board.get_children()),5)
+        values=self.app.bullish_board.item('L0')['values']
+        self.assertEqual(values[2:5],['CONFIRMED','+40.00°','+7.00°'])
+        self.assertEqual(self.app.bearish_board.item('BSHORT')['values'][2],'PROVISIONAL')
+
+    def test_chart_hidden_toggle_never_changes_settings_or_geometry(self):
+        self.assertFalse(self.app.show_chart.get())
+        self.assertEqual(self.app.chart_frame.winfo_manager(),'')
+        settings=self.app.settings;scale=self.long.scale
+        self.app.show_chart.set(True);self.app.toggle_chart();self.root.update()
+        self.assertEqual(self.app.chart_frame.winfo_manager(),'pack')
+        self.assertGreaterEqual(self.app.canvas.winfo_height(),200)
+        self.app.show_chart.set(False);self.app.toggle_chart()
+        self.assertEqual(self.app.settings,settings)
+        self.assertEqual(self.long.scale,scale)
+        self.scanner.set_settings.assert_not_called()
+
+    def test_forget_token_clears_input_blob_and_preference(self):
+        token_store=self.use_token_store(remember=True)
+        token_store.save('saved-secret-token');self.app.token.set('saved-secret-token')
+        self.app.forget_token()
+        self.assertFalse(token_store.path.exists())
+        self.assertEqual(self.app.token.get(),'')
+        self.assertFalse(self.app.remember_token.get())
+        self.assertFalse(self.app.store.load().remember_token)
+
+    def test_native_remember_default_and_non_native_gating(self):
+        token_store=self.use_token_store(remember=True)
+        self.assertTrue(self.app.remember_token.get())
+        self.app.close();self.root=tk.Tk()
+        token_store.cipher.available=False
+        self.app=App(self.root,self.scanner,self.app.store,token_store=token_store)
+        self.assertFalse(self.app.remember_token.get())
+        self.assertIn('disabled',self.app.remember_check.state())
+
+    def test_identity_and_independent_data_directory(self):
+        from ema_scanner import VERSION
+        from ema_scanner.storage import data_directory
+        self.assertEqual(VERSION,'1.0.0')
+        self.assertIn('Trend Chase Version 1',self.root.title())
+        with patch.dict(os.environ,{'LOCALAPPDATA':self.temp.name}):
+            self.assertEqual(data_directory(),Path(self.temp.name)/'Trend_Chase_V1'/'data')
 
     def test_alert_checks_every_new_event_and_deduplicates_batches(self):
         from tests.test_strategy import NOW
