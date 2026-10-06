@@ -96,19 +96,21 @@ def runtime_zip(archive: Path,output: Path):
 
 def build(archive: Path) -> Path:
     wheels=ROOT/'build'/'wheels';records=validate_wheels(wheels)
-    release_name=f'EMA_PreCross_Scanner_{VERSION}'
+    release_name=f'Trend_Chase_V1_{VERSION}'
     destination=ROOT/'build'/'release'/release_name
     if destination.exists():shutil.rmtree(destination)
     destination.mkdir(parents=True)
     app=destination/'app';app.mkdir()
-    for folder in ['ema_scanner','tests','tools','docs','installer']:
+    for folder in ['ema_scanner','tests','tools','docs','installer','assets']:
         shutil.copytree(ROOT/folder,app/folder,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-    for name in ['run_app.pyw','verify_install.py','requirements.txt','requirements.lock.txt','README.md']:
+    for name in ['run_app.pyw','verify_install.py','requirements.txt','requirements.lock.txt','README.md','demo.html','demo.png']:
         shutil.copy2(ROOT/name,app/name)
     for name in ['INSTALL.bat','install.ps1','uninstall.ps1','common.ps1']:
         raw=(ROOT/'installer'/name).read_text(encoding='utf-8').replace('\r\n','\n').replace('\n','\r\n')
         (destination/name).write_bytes(raw.encode('utf-8-sig' if name.endswith('.ps1') else 'utf-8'))
     shutil.copy2(ROOT/'README_FIRST.txt',destination/'README_FIRST.txt')
+    for name in ['demo.html','demo.png']:
+        shutil.copy2(ROOT/name,destination/name)
     shutil.copytree(wheels,destination/'wheels',ignore=shutil.ignore_patterns('*.log'))
     (destination/'requirements-windows.lock.txt').write_text(build_lock(records),encoding='utf-8')
     runtime_zip(archive,destination/'runtime.zip')

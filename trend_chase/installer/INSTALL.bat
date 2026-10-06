@@ -1,8 +1,8 @@
 @echo off
 setlocal
-title EMA Pre-Cross Scanner - Windows installation
+title Trend Chase Version 1 - Windows installation
 cd /d "%~dp0"
-echo Installing EMA Pre-Cross Scanner 1.0.1 for this Windows user...
+echo Installing Trend Chase Version 1 1.0.0 for this Windows user...
 echo The private Python runtime and dependencies are bundled. No admin rights required.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
 if errorlevel 1 (
@@ -12,5 +12,5 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Installation complete. Open EMA Pre-Cross Scanner from your Desktop.
+echo Installation complete. Open Trend Chase Version 1 from your Desktop.
 pause

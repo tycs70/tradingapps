@@ -23,9 +23,9 @@ function Test-Bundle([string]$Source) {
 }
 
 function Assert-OwnedRoot([string]$Root) {
-    $Marker = Join-Path $Root '.ema-scanner-owned'
+    $Marker = Join-Path $Root '.trend-chase-v1-owned'
     if (Test-Path -LiteralPath $Root) {
-        if (-not (Test-Path -LiteralPath $Marker) -or (Get-Content -LiteralPath $Marker -Raw).Trim() -ne 'EMA Pre-Cross Scanner owned installation') {
+        if (-not (Test-Path -LiteralPath $Marker) -or (Get-Content -LiteralPath $Marker -Raw).Trim() -ne 'Trend Chase Version 1 owned installation') {
             throw 'The target folder exists without this app ownership marker. Installation stopped to preserve its contents.'
         }
     }

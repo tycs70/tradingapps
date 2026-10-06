@@ -2,15 +2,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Source = $PSScriptRoot
 . (Join-Path $Source 'common.ps1')
-$Root = Join-Path $env:LOCALAPPDATA 'EMA_PreCross_Scanner'
+$Root = Join-Path $env:LOCALAPPDATA 'Trend_Chase_V1'
 $Program = Join-Path $Root 'program'
 $Data = Join-Path $Root 'data'
-$Marker = Join-Path $Root '.ema-scanner-owned'
+$Marker = Join-Path $Root '.trend-chase-v1-owned'
 $Stage = Join-Path $Root ('.stage-' + [guid]::NewGuid().ToString('N'))
 $Backup = Join-Path $Root ('.backup-' + [guid]::NewGuid().ToString('N'))
-$RegPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EMA_PreCross_Scanner'
-$DesktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'EMA Pre-Cross Scanner.lnk'
-$MenuDir = Join-Path ([Environment]::GetFolderPath('Programs')) 'EMA Pre-Cross Scanner'
+$RegPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Trend_Chase_V1'
+$DesktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Trend Chase Version 1.lnk'
+$MenuDir = Join-Path ([Environment]::GetFolderPath('Programs')) 'Trend Chase Version 1'
 $LockStream = $null
 $InstallGuard = $null
 $Swapped = $false
@@ -19,7 +19,7 @@ $HadProgram = Test-Path -LiteralPath $Program
 $HadDesktop = Test-Path -LiteralPath $DesktopLink
 $HadMenu = Test-Path -LiteralPath $MenuDir
 $HadRegistry = Test-Path -LiteralPath $RegPath
-$Log = Join-Path $env:TEMP ('EMA-PreCross-install-' + [guid]::NewGuid().ToString('N') + '.log')
+$Log = Join-Path $env:TEMP ('Trend-Chase-V1-install-' + [guid]::NewGuid().ToString('N') + '.log')
 
 try {
     Start-Transcript -Path $Log | Out-Null
@@ -31,11 +31,11 @@ try {
     Test-Bundle $Source
     Assert-OwnedRoot $Root
     New-Item -ItemType Directory -Path $Root,$Data -Force | Out-Null
-    Set-Content -LiteralPath $Marker -Value 'EMA Pre-Cross Scanner owned installation' -Encoding UTF8
+    Set-Content -LiteralPath $Marker -Value 'Trend Chase Version 1 owned installation' -Encoding UTF8
     $InstallGuard = [IO.File]::Open((Join-Path $Root 'install.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     try {
         $LockStream = [IO.File]::Open((Join-Path $Data 'instance.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
-    } catch { throw 'The app is running. Close EMA Pre-Cross Scanner and retry.' }
+    } catch { throw 'The app is running. Close Trend Chase Version 1 and retry.' }
     New-Item -ItemType Directory -Path $Stage -Force | Out-Null
     $StagedProgram = Join-Path $Stage 'program'
     New-Item -ItemType Directory -Path $StagedProgram -Force | Out-Null
@@ -56,25 +56,34 @@ try {
     $Shortcut.TargetPath = Join-Path $Program 'runtime\pythonw.exe'
     $Shortcut.Arguments = '-E -s "' + (Join-Path $Program 'app\run_app.pyw') + '"'
     $Shortcut.WorkingDirectory = Join-Path $Program 'app'
-    $Shortcut.Description = 'EMA9/EMA21 five-minute Upstox pre-crossover scanner'
-    $Shortcut.IconLocation = (Join-Path $Program 'runtime\pythonw.exe') + ',0'
+    $Shortcut.Description = 'Trend Chase Version 1: intraday trends and EMA9/EMA21 pre-cross watchlist'
+    $Shortcut.IconLocation = (Join-Path $Program 'app\assets\trend-chase.ico') + ',0'
     $Shortcut.Save()
+    $DemoShortcut = $Shell.CreateShortcut((Join-Path $Stage 'demo.lnk'))
+    $DemoShortcut.TargetPath = $Shortcut.TargetPath
+    $DemoShortcut.Arguments = $Shortcut.Arguments + ' --demo'
+    $DemoShortcut.WorkingDirectory = $Shortcut.WorkingDirectory
+    $DemoShortcut.Description = 'Trend Chase Version 1 offline Demo - fictional sample data, no broker connection'
+    $DemoShortcut.IconLocation = $Shortcut.IconLocation
+    $DemoShortcut.Save()
     Swap-Program $StagedProgram $Program $Backup
     $Swapped = $true
     New-Item -ItemType Directory -Path $MenuDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $Stage 'app.lnk') -Destination $DesktopLink -Force
-    Copy-Item -LiteralPath (Join-Path $Stage 'app.lnk') -Destination (Join-Path $MenuDir 'EMA Pre-Cross Scanner.lnk') -Force
+    Copy-Item -LiteralPath (Join-Path $Stage 'app.lnk') -Destination (Join-Path $MenuDir 'Trend Chase Version 1.lnk') -Force
+    Copy-Item -LiteralPath (Join-Path $Stage 'demo.lnk') -Destination (Join-Path $MenuDir 'Trend Chase Version 1 Demo.lnk') -Force
     Copy-Item -LiteralPath (Join-Path $Source 'uninstall.ps1') -Destination (Join-Path $Root 'uninstall.ps1') -Force
     New-Item -Path $RegPath -Force | Out-Null
-    New-ItemProperty -Path $RegPath -Name DisplayName -Value 'EMA Pre-Cross Scanner' -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.1' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $RegPath -Name DisplayName -Value 'Trend Chase Version 1' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.0' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name Publisher -Value 'TradingApps' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name InstallLocation -Value $Root -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $RegPath -Name DisplayIcon -Value $Shortcut.IconLocation -PropertyType String -Force | Out-Null
     $UninstallCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $Root 'uninstall.ps1') + '"'
     New-ItemProperty -Path $RegPath -Name UninstallString -Value $UninstallCommand -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
-    Set-Content -LiteralPath $Marker -Value 'EMA Pre-Cross Scanner owned installation' -Encoding UTF8
+    Set-Content -LiteralPath $Marker -Value 'Trend Chase Version 1 owned installation' -Encoding UTF8
     $Committed = $true
     Write-Host ('Installed into ' + $Root)
     Write-Host 'Your new Desktop shortcut is ready. Settings and logs have been preserved.'
