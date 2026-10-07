@@ -1,0 +1,12 @@
+certifi==2026.7.22
+charset-normalizer==3.5.2
+idna==3.20
+protobuf==7.36.2
+python-dateutil==2.9.0.post0
+requests==2.32.5
+six==1.17.0
+tzdata==2025.2
+upstox-python-sdk==2.23.0
+urllib3==2.8.0
+uuid==1.30
+websocket-client==1.9.2

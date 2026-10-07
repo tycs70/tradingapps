@@ -1,3 +1,13 @@
+# Trend Chaser Nifty 50 — Windows app
+
+The first Nifty 50 variant uses the same Trend Chase signal, entry/removal, ranking and seven-per-side dashboard rules. It loads current Nifty 50 constituents on connection and installs separately as **Trend Chaser Nifty 50**.
+
+[Download Trend Chaser Nifty 50 1.0.0 for Windows x64](https://github.com/tycs70/tradingapps/raw/refs/heads/trend-chaser-nifty-50/releases/Trend_Chaser_Nifty_50_1.0.0_Windows_x64.zip)
+
+Extract the full ZIP and run `INSTALL.bat`. Source and usage: [trend_chaser_nifty50/README.md](trend_chaser_nifty50/README.md). Logs: `%LOCALAPPDATA%\Trend_Chaser_Nifty_50\data\logs`.
+
+---
+
 # EMA Pre-Cross Scanner
 
 Fresh Windows desktop Upstox scanner for near EMA9/EMA21 crossovers on five-minute NSE underlying shares. Both LONG and SHORT use mirrored rules. It ranks **fresh ARMED** setups by the signed slope of EMA9 on its own inspectable reference chart. It does not use ATR, place orders or select option strikes.
