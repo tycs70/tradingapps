@@ -1,3 +1,13 @@
+# Trend Chaser Nifty Next 50 — Windows app
+
+The Next 50 variant uses the same Trend Chase signal, entry/removal, ranking and seven-per-side dashboard rules. It loads current Nifty Next 50 constituents on connection, scans members with active stock options, and installs separately as **Trend Chaser Nifty Next 50**. Its settings, token, trend state, logs and shortcuts are independent of the Nifty 50 app.
+
+[Download Trend Chaser Nifty Next 50 1.0.0 for Windows x64](https://github.com/tycs70/tradingapps/raw/refs/heads/trend-chaser-nifty-next-50/releases/Trend_Chaser_Nifty_Next_50_1.0.0_Windows_x64.zip)
+
+Extract the full ZIP and run `INSTALL.bat`. Source and usage: [trend_chaser_niftynext50/README.md](trend_chaser_niftynext50/README.md). Logs: `%LOCALAPPDATA%\Trend_Chaser_Nifty_Next_50\data\logs`.
+
+---
+
 # Trend Chaser Nifty 50 — Windows app
 
 The first Nifty 50 variant uses the same Trend Chase signal, entry/removal, ranking and seven-per-side dashboard rules. It loads current Nifty 50 constituents on connection and installs separately as **Trend Chaser Nifty 50**.
