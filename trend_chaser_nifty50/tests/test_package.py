@@ -38,8 +38,8 @@ class PackageTest(unittest.TestCase):
             self.skipTest('Developer release wheel cache unavailable; installed app does not retain it')
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);output=self.build_sample(root)
-            self.assertEqual(output.name,'Trend_Chaser_Nifty_50_1.0.0_Windows_x64.zip')
-            folder=root/'build'/'release'/'Trend_Chaser_Nifty_50_1.0.0'
+            self.assertEqual(output.name,'Trend_Chaser_Nifty_50_1.0.1_Windows_x64.zip')
+            folder=root/'build'/'release'/'Trend_Chaser_Nifty_50_1.0.1'
             verify_tree(folder)
             required={'app/assets/trend-chase.ico','app/assets/trend-chase.png','app/ema_scanner/trends.py',
                       'app/ema_scanner/index_universe.py',
@@ -49,11 +49,11 @@ class PackageTest(unittest.TestCase):
                       'requirements-windows.lock.txt'}
             manifest=json.loads((folder/'manifest.json').read_text())
             self.assertTrue(required<=set(manifest['files']),required-set(manifest['files']))
-            self.assertEqual(manifest['version'],'1.0.0')
+            self.assertEqual(manifest['version'],'1.0.1')
             self.assertEqual(manifest['runtime_source_sha256'],build_release.RUNTIME_HASH)
             with zipfile.ZipFile(output) as package:
-                self.assertTrue(all(name.startswith('Trend_Chaser_Nifty_50_1.0.0/') for name in package.namelist()))
-                self.assertEqual(package.read('Trend_Chaser_Nifty_50_1.0.0/demo.html'),(ROOT/'demo.html').read_bytes())
+                self.assertTrue(all(name.startswith('Trend_Chaser_Nifty_50_1.0.1/') for name in package.namelist()))
+                self.assertEqual(package.read('Trend_Chaser_Nifty_50_1.0.1/demo.html'),(ROOT/'demo.html').read_bytes())
             self.assertEqual(output.with_suffix('.zip.sha256').read_text().split()[0],build_release.digest(output))
 
     def test_installer_targets_only_its_owned_app_and_creates_offline_demo(self):
@@ -70,7 +70,7 @@ class PackageTest(unittest.TestCase):
             self.assertIn("'Trend_Chaser_Nifty_50'",text)
             self.assertIn('Uninstall\\Trend_Chaser_Nifty_50',text)
             self.assertIn('Trend Chaser Nifty 50.lnk',text)
-        self.assertIn("DisplayVersion -Value '1.0.0'",install)
+        self.assertIn("DisplayVersion -Value '1.0.1'",install)
         self.assertIn('app\\assets\\trend-chase.ico',install)
         self.assertIn('Trend Chaser Nifty 50 Demo.lnk',install)
         self.assertIn('--demo',install)

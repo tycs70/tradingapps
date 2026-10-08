@@ -209,10 +209,71 @@ class DesktopTest(unittest.TestCase):
     def test_identity_and_independent_data_directory(self):
         from ema_scanner import VERSION
         from ema_scanner.storage import data_directory
-        self.assertEqual(VERSION,'1.0.0')
+        self.assertEqual(VERSION,'1.0.1')
         self.assertIn('Trend Chaser Nifty 50',self.root.title())
         with patch.dict(os.environ,{'LOCALAPPDATA':self.temp.name}):
             self.assertEqual(data_directory(),Path(self.temp.name)/'Trend_Chaser_Nifty_50'/'data')
+
+    def test_csv_import_button_persists_members_and_shows_index_and_date(self):
+        from tests.test_nifty50 import csv_text
+        self.assertTrue(hasattr(self.app,'import_constituents'), 'CSV import UI is missing')
+        self.data['connected']=False
+        source=Path(self.temp.name)/'ind_nifty50list.csv';source.write_text(csv_text())
+        with patch('ema_scanner.ui.filedialog.askopenfilename',return_value=str(source)):
+            self.app.import_constituents()
+        loaded=self.app.constituent_store.load()
+        self.assertEqual(len(loaded.members),50)
+        self.assertIn('Nifty 50',self.app.constituent_status.get())
+        self.assertIn('50 shares',self.app.constituent_status.get())
+        self.assertIn(loaded.imported_at.strftime('%Y-%m-%d'),self.app.constituent_status.get())
+        self.app.tabs.select(self.app.settings_tab);self.root.update()
+        self.assertTrue(self.app.import_csv_button.winfo_viewable())
+        self.assertLess(self.app.import_csv_button.winfo_rooty()+self.app.import_csv_button.winfo_height(),
+                        self.root.winfo_rooty()+self.root.winfo_height())
+
+    def test_invalid_csv_selection_does_not_replace_the_saved_import(self):
+        from tests.test_nifty50 import csv_text
+        self.assertTrue(hasattr(self.app,'import_constituents'), 'CSV import UI is missing')
+        self.data['connected']=False
+        source=Path(self.temp.name)/'ind_nifty50list.csv';source.write_text(csv_text())
+        with patch('ema_scanner.ui.filedialog.askopenfilename',return_value=str(source)):
+            self.app.import_constituents()
+        before=self.app.constituent_store.path.read_bytes()
+        source.write_text('<html>webpage</html>')
+        with patch('ema_scanner.ui.filedialog.askopenfilename',return_value=str(source)), \
+                patch('ema_scanner.ui.messagebox.showerror'):
+            self.app.import_constituents()
+        self.assertEqual(self.app.constituent_store.path.read_bytes(),before)
+
+    def test_connected_import_keeps_current_list_unchanged(self):
+        self.assertTrue(hasattr(self.app,'import_constituents'), 'CSV import UI is missing')
+        with patch('ema_scanner.ui.messagebox.showerror'):
+            self.app.import_constituents()
+        self.assertFalse(self.app.constituent_store.path.exists())
+
+    def test_recovering_connection_cannot_replace_the_index_list(self):
+        from tests.test_nifty50 import csv_text
+        self.data.update(connected=False,connecting=False,session_active=True)
+        source=Path(self.temp.name)/'ind_nifty50list.csv';source.write_text(csv_text())
+        with patch('ema_scanner.ui.filedialog.askopenfilename',return_value=str(source)), \
+                patch('ema_scanner.ui.messagebox.showerror'):
+            self.app.import_constituents()
+        self.assertFalse(self.app.constituent_store.path.exists())
+
+    def test_expired_import_is_visible_and_can_be_cleared(self):
+        from datetime import datetime, timedelta
+        from ema_scanner.models import IST
+        from tests.test_nifty50 import csv_text
+        self.assertTrue(hasattr(self.app,'import_constituents'), 'CSV import UI is missing')
+        self.data['connected']=False
+        source=Path(self.temp.name)/'ind_nifty50list.csv';source.write_text(csv_text())
+        now=datetime.now(IST)
+        self.app.constituent_store.import_file(source,now=now-timedelta(days=1))
+        self.app.update_constituent_status()
+        self.assertIn('Expired',self.app.constituent_status.get())
+        self.app.use_automatic_constituents()
+        self.assertFalse(self.app.constituent_store.path.exists())
+        self.assertIn('Automatic',self.app.constituent_status.get())
 
     def test_alert_checks_every_new_event_and_deduplicates_batches(self):
         from tests.test_strategy import NOW

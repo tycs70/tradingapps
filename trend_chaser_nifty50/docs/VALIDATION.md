@@ -1,5 +1,20 @@
 # Trend Chaser Nifty 50 validation
 
+## Nifty 50 1.0.1 update — 8 October 2026
+
+The reported Windows failure was reproduced with HTTP 200 returning an HTML page instead of the official CSV. Settings & Upstox now supports a browser download and validated same-day CSV import. Imported lists are revalidated, use the existing ISIN/active-option selection, show their import time, and expire in IST. Invalid replacements preserve the previous import; other index filenames are rejected. The filename and CSV checks cannot certify a manually supplied file's origin or download date: the user must download fresh from the official link. Imports are blocked during active/recovering sessions, and an imported-list session disconnects at day expiry.
+
+Observed checks:
+
+- Full Python suite: 146 tests, 145 passed and one native Windows DPAPI test skipped on Linux. All Tk tests ran on the offscreen display.
+- Offline runtime/dependency/V3 decoder/EMA/Nifty 50/trend/demo/Tk verification passed for version 1.0.1.
+- Synthetic worker benchmark: all 420 transitions for 210 stocks, p99 391.074 ms (excludes broker delivery and Windows rendering).
+- PowerShell 7.5.3 filesystem tests passed for ownership, program replacement, rollback, preserved settings/encrypted-token fixture/trend state/logs and corrupted-package rejection. PowerShell was verified against its publisher checksum before execution.
+- Independent review caught a list-change-during-feed-recovery issue; a reproducing test failed before the session guard and passed after it. A second review of recovery/IST-expiry behavior found no important issues; its focused 64-test run passed.
+- The update retains the Nifty 50 install root, ownership marker, Desktop/Start Menu shortcuts, uninstall registry key and data directory. Only DisplayVersion becomes 1.0.1. Runtime, dependency pins, Windows wheels, strategy, indicators, history, trend ranking and original option-eligibility rules are unchanged.
+
+Native Windows registry/shortcut creation, DPAPI and authenticated Upstox streaming still require checking on the target laptop. The installer runs its native offline security/Tk checks before swapping program files. Browser CSV import is the supported recovery path; this update does not claim the NSE website now accepts automated downloads.
+
 The variant is based on the verified Trend Chase Version 1 1.0.1 layout update.
 Only its Nifty 50 universe boundary and application identity change. The scanner,
 strategy, trend lifecycle, indicators, history, models and existing option eligibility

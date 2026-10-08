@@ -15,7 +15,8 @@ import websocket
 
 from .history import parse_candles, parse_time, validate_history
 from .models import Candle, IST
-from .index_universe import NIFTY50_URL, parse_constituents, select_nifty50
+from .index_universe import NIFTY50_URL, parse_constituents, select_nifty50, ConstituentStore
+from .storage import data_directory
 
 MASTER_URL = 'https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz'
 
@@ -97,6 +98,8 @@ class Broker:
         self._rate = RateLimiter()
         self._stop = threading.Event()
         self._stream = None
+        self.constituent_store = ConstituentStore(data_directory()/'nifty50-constituents.json')
+        self.constituent_import_day = None
 
     def _json(self, url: str) -> dict:
         for attempt in range(3):
@@ -133,16 +136,43 @@ class Broker:
             master = json.loads(gzip.decompress(response.content))
         except (requests.RequestException,ValueError,OSError):
             raise RuntimeError('Unable to download the current NSE instrument master.') from None
+        now = datetime.now(IST)
+        help_text = 'Download the Nifty 50 list in your browser, then use Load official CSV in Settings & Upstox.'
         try:
-            response = self._get(NIFTY50_URL,
-                                 headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'text/csv'},
-                                 timeout=(5,30))
+            imported = self.constituent_store.load()
+        except (OSError, ValueError):
+            raise RuntimeError('Unable to download or load Nifty 50 constituents: the saved CSV is unavailable or invalid. '+help_text) from None
+        using_import = imported is not None and imported.current(now)
+        if using_import:
+            members = imported.members
+            self.constituent_import_day = imported.imported_at.date()
+        else:
+            self.constituent_import_day = None
+            try:
+                response = self._get(NIFTY50_URL,
+                                     headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'text/csv'},
+                                     timeout=(5,30))
+            except requests.exceptions.SSLError:
+                raise RuntimeError('Unable to download Nifty 50 constituents: certificate verification failed. '+help_text) from None
+            except requests.exceptions.Timeout:
+                raise RuntimeError('Unable to download Nifty 50 constituents: the request timed out. '+help_text) from None
+            except requests.RequestException:
+                raise RuntimeError('Unable to download Nifty 50 constituents: network or proxy error. '+help_text) from None
             if response.status_code != 200:
-                raise ValueError()
-            members = parse_constituents(response.content.decode('utf-8-sig'))
-        except (requests.RequestException,ValueError,OSError):
-            raise RuntimeError('Unable to download or validate the current Nifty 50 constituents. Check the network and retry.') from None
-        instruments,reasons = select_nifty50(master,datetime.now(IST).date(),members)
+                raise RuntimeError(f'Unable to download Nifty 50 constituents: HTTP {response.status_code}. '+help_text)
+            try:
+                text = response.content.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                raise RuntimeError('Unable to download or validate the current Nifty 50 constituents: invalid CSV encoding. '+help_text) from None
+            if text.lstrip().startswith('<'):
+                raise RuntimeError('Unable to download Nifty 50 constituents: the website returned a webpage instead of the CSV. '+help_text)
+            try:
+                members = parse_constituents(text)
+            except ValueError:
+                raise RuntimeError('Unable to download or validate the current Nifty 50 constituents: invalid CSV. '+help_text) from None
+        instruments,reasons = select_nifty50(master,now.date(),members)
+        if using_import:
+            reasons.append('Nifty 50 imported CSV loaded '+imported.imported_at.strftime('%Y-%m-%d %H:%M IST')+'; valid for this IST day.')
         if not instruments:
             raise RuntimeError('No current Nifty 50 stock-option underlyings resolved.')
         return instruments,reasons

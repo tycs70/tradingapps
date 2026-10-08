@@ -39,6 +39,23 @@ class ScannerTest(unittest.TestCase):
         self.assertEqual(data['counts']['ready'],1)
         self.assertEqual(data['counts']['paused'],1)
 
+    def test_recovering_feed_still_reports_an_active_connection_session(self):
+        self.s.broker=Mock()
+        self.s._process('status','error',1)
+        data=self.s.snapshot()
+        self.assertFalse(data['connected'])
+        self.assertFalse(data['connecting'])
+        self.assertTrue(data.get('session_active',False))
+
+    def test_imported_universe_disconnects_when_its_ist_day_expires(self):
+        broker=Mock();broker.constituent_import_day=NOW.date()
+        self.s.broker=broker
+        self.clock.return_value=NOW+timedelta(days=1)
+        self.s._maintenance()
+        self.assertIsNone(self.s.broker)
+        self.assertFalse(self.s.snapshot()['connected'])
+        self.assertIn('CSV expired',self.s.snapshot()['status'])
+
     def test_stale_future_invalid_and_out_of_order_quotes_pause(self):
         self.s._quote(self.quote())
         for stamp in [NOW-timedelta(seconds=16),NOW+timedelta(seconds=3),NOW-timedelta(seconds=1)]:

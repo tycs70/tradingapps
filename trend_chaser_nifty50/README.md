@@ -1,18 +1,22 @@
 # Trend Chaser Nifty 50
 
-Independent Windows desktop watchlist for five-minute NSE underlying-share trends using Upstox. Version 1.0.0, based on Trend Chase Version 1 layout update 1.0.1. The original Trend Chase and EMA scanner remain separate applications.
+Independent Windows desktop watchlist for five-minute NSE underlying-share trends using Upstox. Version 1.0.1 updates the existing Nifty 50 installation. The original Trend Chase and EMA scanner remain separate applications.
 
 ## Install and preview
 Extract the complete Windows release ZIP, open the extracted folder and double-click INSTALL.bat. Use the existing Trend Chaser Nifty 50 Desktop shortcut after updating.
 
-The per-user installer includes a private Python/Tk runtime and all pinned dependencies; no existing Python or administrator rights are needed. Windows 10/11 Intel/AMD x64 is required. This first Nifty 50 release creates its own installation. Reinstalling it updates only Trend Chaser Nifty 50 and preserves its settings, encrypted token, confirmed trend state and logs.
+The per-user installer includes a private Python/Tk runtime and all pinned dependencies; no existing Python or administrator rights are needed. Windows 10/11 Intel/AMD x64 is required. Close the app before installing this update. Reinstalling it updates only Trend Chaser Nifty 50 and preserves its settings, encrypted token, confirmed trend state and logs.
 
 Before installing, open demo.html in the extracted release folder or view demo.png. After installing, use Start Menu > Trend Chaser Nifty 50 > Trend Chaser Nifty 50 Demo for an offline preview that does not load saved tokens or write live data. The normal app also has a Demo tab. Demo numbers are fictional layout samples for 7 October 2026, not a forecast or recorded market results.
 
 ## Current Nifty 50 universe
-Each connection downloads the official Nifty 50 constituent CSV from NSE Indices and the current Upstox NSE instrument master. Membership is matched by ISIN, then restricted to underlying equities with unexpired stock-option contracts. Symbols follow the official list, including company renames. Only those matched shares are subscribed and scanned; the complete exchange master is not subscribed.
+Each connection downloads the current Upstox NSE instrument master and uses either the official Nifty 50 CSV download or a validated browser import from the current IST day. Membership is matched by ISIN, then restricted to underlying equities with unexpired stock-option contracts. Symbols follow the official list, including company renames. Only those matched shares are subscribed and scanned; the complete exchange master is not subscribed.
 
-The constituent CSV must contain exactly 50 unique equity members with valid ISINs and symbols. A network failure or malformed list stops connection with a Nifty 50 error; it never substitutes all F&O shares or a dated bundled list. A constituent without a current option contract is excluded and named in Diagnostics. The eligibility and receiving counts show actual coverage. Index changes are picked up on the next connection.
+The constituent CSV must contain exactly 50 unique equity members with valid ISINs and symbols. A network failure or malformed list stops connection with a Nifty 50 error; it never substitutes all F&O shares or a dated bundled list. A constituent without a current option contract is excluded and named in Diagnostics. The eligibility and receiving counts show actual coverage. Automatic index changes are picked up on the next connection.
+
+If the site returns an HTML webpage instead of the CSV, disconnect and open Settings & Upstox. Click **Download Nifty 50 CSV**, then **Load official CSV** and select `ind_nifty50list.csv` from Downloads. Browser copies such as `ind_nifty50list (1).csv` are accepted; other index filenames are rejected. The label displays Nifty 50, 50 shares and the import time. Connect normally with the current or saved Upstox token.
+
+The app cannot certify a manually supplied file’s origin or download date: download it fresh from the provided official link before importing. Imports are stored atomically in this app’s data folder and revalidated before use. A bad replacement leaves the previous import intact. An import is usable only on its import day in IST; an active imported-list session disconnects when that day expires. Download and import a new file for the next day. **Use automatic download** removes the import. List changes require Disconnect, including while the feed is recovering. Rules, token encryption, dependencies and ranking are unchanged.
 
 ## Seven-per-side dashboard
 The Scanner tab displays bullish and bearish panels side by side, with seven visible rows each. The normal pre-cross table has been removed from the display; its underlying computation and events remain unchanged. All fourteen trend rows fit without scrolling at a 1200 by 680 window. Columns show rank, share, provisional/confirmed state, frozen crossover angle, current angle, live price and entry time in IST. Click a share for its EMA9, EMA21 and distance details. New visible rows receive a brief highlight. The optional reference chart opens in its own tab so it does not push dashboard rows off-screen.
@@ -51,7 +55,7 @@ python tools/benchmark.py            # synthetic 210-stock burst, no broker cred
 python -m tools.repackage_release --base /path/to/extracted/Trend_Chase_V1_1.0.0 --output dist
 # Alternatively rebuild the runtime from the pinned original source archive:
 python tools/build_release.py --runtime /path/to/authenticated-runtime.tar.gz
-python tools/build_release.py --verify build/release/Trend_Chaser_Nifty_50_1.0.0
+python tools/build_release.py --verify build/release/Trend_Chaser_Nifty_50_1.0.1
 ```
 
 Linux GUI tests require Tk and a running display, such as Xvfb. The builder accepts only the pinned runtime SHA-256 and the complete 12-wheel Windows set. Installer dependencies use --no-index and --require-hashes; package hashes are checked before installation. PowerShell tests/test_installer.ps1 exercises safe paths, ownership, swap/rollback, retained data and corruption without Windows registry or shell access.

@@ -4,14 +4,16 @@ from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from tkinter import font as tkfont
+import webbrowser
 
 from . import VERSION
 from .broker import normalize_token
 from .credentials import TokenStore
 from .models import IST, Settings
 from .demo import sample_data
+from .index_universe import ConstituentStore, NIFTY50_URL
 
 BG='#101925'; PANEL='#172334'; TEXT='#e6edf5'; MUTED='#91a4bc'
 BLUE='#57a6ff'; GREEN='#46d8a3'; RED='#ff8190'; GOLD='#f2c66f'
@@ -32,6 +34,9 @@ class App:
         self.root,self.scanner,self.store=root,scanner,store
         self.demo_mode=demo_mode
         self.token_store=token_store if token_store is not None else TokenStore(store.path.parent/'upstox-token.dpapi')
+        self.constituent_store=ConstituentStore(store.path.parent/'nifty50-constituents.json')
+        self.constituent_status=tk.StringVar()
+        self._constituent_status_day=None
         self.settings=Settings() if demo_mode else store.load()
         self.selected=None;self.current=None;self.after_id=None;self.closed=False
         self._event_count=0;self._last_event=None;self._event_sequence=0
@@ -82,6 +87,7 @@ class App:
         self.demo_tab=ttk.Frame(self.tabs,padding=12);self.tabs.add(self.demo_tab,text='  Demo  ')
         self.main_body=ttk.Frame(self.main);self.main_body.pack(fill='both',expand=True)
         self.main_viewport=None
+        self.settings_body,self.settings_viewport=self._scroll_panel(self.settings_tab)
         self.demo_body,self.demo_viewport=self._scroll_panel(self.demo_tab)
         root.bind('<MouseWheel>',self._scroll_tab)
         root.bind('<Button-4>',lambda event:self._scroll_tab(event,-1))
@@ -106,7 +112,9 @@ class App:
 
     def _scroll_tab(self,event,units=None):
         selected=self.tabs.select()
-        viewport=self.main_viewport if selected==str(self.main) else self.demo_viewport if selected==str(self.demo_tab) else None
+        viewport=(self.main_viewport if selected==str(self.main) else
+                  self.demo_viewport if selected==str(self.demo_tab) else
+                  self.settings_viewport if selected==str(self.settings_tab) else None)
         if viewport:
             if units is None:units=-1 if event.delta>0 else 1
             viewport.yview_scroll(units,'units')
@@ -262,28 +270,43 @@ class App:
         self.event_table.tag_configure('LONG',foreground=GREEN);self.event_table.tag_configure('SHORT',foreground=RED)
 
     def _settings(self):
-        ttk.Label(self.settings_tab,text='Upstox connection',font=(self.font_family,15,'bold')).pack(anchor='w')
-        ttk.Label(self.settings_tab,text='Paste a current Upstox access token, or use the saved token below.',style='Muted.TLabel').pack(anchor='w',pady=8)
-        self.token_entry=ttk.Entry(self.settings_tab,textvariable=self.token,show='•',width=75)
+        index_frame=ttk.LabelFrame(self.settings_body,text='Current Nifty 50 stock list',padding=10)
+        index_frame.pack(fill='x',pady=(0,12))
+        ttk.Label(index_frame,text='If automatic downloading fails, download a fresh Nifty 50 CSV in your browser, then load it here.',
+                  style='Muted.TLabel',wraplength=960).pack(anchor='w')
+        controls=ttk.Frame(index_frame);controls.pack(anchor='w',pady=6)
+        download=ttk.Button(controls,text='Download Nifty 50 CSV',command=lambda:webbrowser.open(NIFTY50_URL))
+        download.pack(side='left')
+        self.import_csv_button=ttk.Button(controls,text='Load official CSV',command=self.import_constituents)
+        self.import_csv_button.pack(side='left',padx=8)
+        automatic=ttk.Button(controls,text='Use automatic download',command=self.use_automatic_constituents)
+        automatic.pack(side='left')
+        ttk.Label(index_frame,textvariable=self.constituent_status,style='Muted.TLabel',wraplength=960).pack(anchor='w')
+        if self.demo_mode:
+            for button in (download,self.import_csv_button,automatic):button.state(['disabled'])
+        self.update_constituent_status()
+        ttk.Label(self.settings_body,text='Upstox connection',font=(self.font_family,15,'bold')).pack(anchor='w')
+        ttk.Label(self.settings_body,text='Paste a current Upstox access token, or use the saved token below.',style='Muted.TLabel').pack(anchor='w',pady=8)
+        self.token_entry=ttk.Entry(self.settings_body,textvariable=self.token,show='•',width=75)
         self.token_entry.pack(anchor='w',fill='x')
-        self.remember_check=ttk.Checkbutton(self.settings_tab,text='Remember token on this Windows account (encrypted)',
+        self.remember_check=ttk.Checkbutton(self.settings_body,text='Remember token on this Windows account (encrypted)',
                                           variable=self.remember_token,command=self.remember_changed)
         self.remember_check.pack(anchor='w',pady=(10,4))
         if not self.token_store.available:
             self.remember_check.state(['disabled'])
             self.token_status.set('Remember token requires Windows. Connect with a pasted token on this system.')
-        ttk.Label(self.settings_tab,textvariable=self.token_status,style='Muted.TLabel',wraplength=960).pack(anchor='w')
-        ttk.Button(self.settings_tab,text='Connect',command=self.connect).pack(anchor='w',pady=12)
-        ttk.Button(self.settings_tab,text='Forget Token',command=self.forget_token).pack(anchor='w',pady=(0,8))
-        ttk.Label(self.settings_tab,text='Trading rules',font=(self.font_family,15,'bold')).pack(anchor='w',pady=(16,10))
-        form=ttk.Frame(self.settings_tab);form.pack(anchor='w')
+        ttk.Label(self.settings_body,textvariable=self.token_status,style='Muted.TLabel',wraplength=960).pack(anchor='w')
+        ttk.Button(self.settings_body,text='Connect',command=self.connect).pack(anchor='w',pady=12)
+        ttk.Button(self.settings_body,text='Forget Token',command=self.forget_token).pack(anchor='w',pady=(0,8))
+        ttk.Label(self.settings_body,text='Trading rules',font=(self.font_family,15,'bold')).pack(anchor='w',pady=(16,10))
+        form=ttk.Frame(self.settings_body);form.pack(anchor='w')
         for row,(label,var) in enumerate([('Maximum EMA gap as % of share price (0.001–0.5)',self.proximity),
                                           ('Reference chart candles (20–120)',self.chart_bars),
                                           ('EMA9 angle intervals (1–5)',self.angle_intervals)]):
             ttk.Label(form,text=label).grid(row=row,column=0,sticky='w',pady=7)
             ttk.Entry(form,textvariable=var,width=12).grid(row=row,column=1,padx=20,pady=7)
-        ttk.Button(self.settings_tab,text='Apply & save rules',command=self.apply_settings).pack(anchor='w',pady=12)
-        ttk.Checkbutton(self.settings_tab,text='Sound for new live ARMED/crossover events',variable=self.alerts).pack(anchor='w',pady=6)
+        ttk.Button(self.settings_body,text='Apply & save rules',command=self.apply_settings).pack(anchor='w',pady=12)
+        ttk.Checkbutton(self.settings_body,text='Sound for new live ARMED/crossover events',variable=self.alerts).pack(anchor='w',pady=6)
         text=('LONG: EMA9 below EMA21, rising and converging; positive chart angle; gap inside the limit.\n'
               'SHORT: EMA9 above EMA21, falling and converging; negative chart angle; same gap limit.\n\n'
               'The developing five-minute EMA is recalculated from the previous completed EMA on every quote.\n'
@@ -292,13 +315,59 @@ class App:
               'Normal pre-cross rank uses current direction-aligned angle. No ATR enters either ranking.\n'
               'The chart holds its scale during a candle unless prices breach it. External chart zoom can differ.\n'
               'Only fresh quotes during the normal NSE session qualify. Default proximity: 0.05%.')
-        ttk.Label(self.settings_tab,text=text,style='Muted.TLabel',wraplength=960,justify='left').pack(anchor='w',pady=18)
+        ttk.Label(self.settings_body,text=text,style='Muted.TLabel',wraplength=960,justify='left').pack(anchor='w',pady=18)
 
     def _diagnostics(self):
         ttk.Label(self.diag_tab,text='Per-stock readiness. Missing history and stale quotes pause that stock independently.',style='Muted.TLabel').pack(anchor='w',pady=(0,10))
         self.stock_table=self._table(self.diag_tab,['Stock','Readiness','Reason'],[150,130,800],height=14)
         self.diag_text=tk.Text(self.diag_tab,height=6,bg=PANEL,fg=MUTED,relief='flat',font=('Consolas',10),wrap='word')
         self.diag_text.pack(fill='x',pady=(12,0))
+
+    def update_constituent_status(self):
+        now=datetime.now(IST)
+        self._constituent_status_day=now.date()
+        if self.demo_mode:
+            self.constituent_status.set('Offline demo — no index download or import.')
+            return
+        try:
+            imported=self.constituent_store.load()
+            if imported is None:
+                text='Automatic download. No browser CSV loaded.'
+            else:
+                stamp=imported.imported_at.strftime('%Y-%m-%d %H:%M IST')
+                text=(f'Nifty 50: 50 shares, imported {stamp}. Valid for this IST day.' if imported.current(now)
+                      else f'Expired Nifty 50 import from {stamp}. Download and load a fresh CSV for today.')
+        except (ValueError,OSError):
+            text='Saved Nifty 50 CSV is unavailable or invalid. Load a fresh official CSV, or use automatic download.'
+        self.constituent_status.set(text)
+
+    def _can_change_constituents(self):
+        if self.demo_mode:return False
+        state=self.scanner.snapshot()
+        if state.get('connected') or state.get('connecting') or state.get('session_active'):
+            messagebox.showerror('Nifty 50 stock list','Disconnect before changing the stock list, then connect again.',parent=self.root)
+            return False
+        return True
+
+    def import_constituents(self):
+        if not self._can_change_constituents():return
+        source=filedialog.askopenfilename(parent=self.root,title='Choose the freshly downloaded Nifty 50 CSV',
+                                          filetypes=[('Official CSV','*.csv')])
+        if not source:return
+        try:
+            self.constituent_store.import_file(source)
+        except ValueError as exc:
+            messagebox.showerror('Nifty 50 stock list',str(exc),parent=self.root)
+        except OSError:
+            messagebox.showerror('Nifty 50 stock list','Unable to read the CSV or save the stock list. Check folder access and try again.',parent=self.root)
+        self.update_constituent_status()
+
+    def use_automatic_constituents(self):
+        if not self._can_change_constituents():return
+        try:self.constituent_store.clear()
+        except OSError:
+            messagebox.showerror('Nifty 50 stock list','Unable to clear the saved list. Check folder access and try again.',parent=self.root)
+        self.update_constituent_status()
 
     def connect(self):
         if self.demo_mode:return
@@ -365,6 +434,7 @@ class App:
 
     def refresh(self):
         if self.closed:return
+        if self._constituent_status_day!=datetime.now(IST).date():self.update_constituent_status()
         if self.after_id:
             self.root.after_cancel(self.after_id);self.after_id=None
         data=self.scanner.snapshot();self.current=data

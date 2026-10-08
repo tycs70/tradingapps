@@ -2,7 +2,7 @@
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import math
 import queue
 import threading
@@ -284,6 +284,11 @@ class Scanner:
 
     def _maintenance(self):
         with self.lock:
+            import_day=getattr(self.broker,'constituent_import_day',None)
+            if isinstance(import_day,date) and import_day!=self.clock().astimezone(IST).date():
+                self.disconnect()
+                self.connection_status='Nifty 50 CSV expired. Download and Load official CSV in Settings & Upstox, then connect again.'
+                self.diagnostics.append(self.connection_status)
             self._roll_day()
             self._expire_provisionals()
             if self.overflow:
@@ -350,7 +355,7 @@ class Scanner:
                           'hidden':len(candidates)-len(active)}
             receiving=sum(bool(s.last_quote and -2<=(now-s.last_quote.time).total_seconds()<=15) for s in self.states.values())
             ready=len(rows)
-            return {'connected':self.connected,'connecting':self.connecting,'status':self.connection_status,
+            return {'connected':self.connected,'connecting':self.connecting,'session_active':self.broker is not None,'status':self.connection_status,
                     'market':self.market_status,'settings':self.settings,'rows':rows,'armed':rank_armed(rows),
                     'counts':{'eligible':len(self.states),'subscribed':len(self.states) if self.connected else 0,
                               'receiving':receiving,'ready':ready,'paused':len(self.states)-ready},

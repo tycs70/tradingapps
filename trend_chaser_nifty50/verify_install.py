@@ -44,7 +44,7 @@ def verify(no_display=False):
     payload=MarketDataFeedV3_pb2.FeedResponse(type=1,currentTs=1)
     if MessageToDict(payload)['type']!='live_feed':raise RuntimeError('Feed decoder check failed.')
     upstox_client.ApiClient(upstox_client.Configuration())
-    require(VERSION=='1.0.0','Unexpected app version.')
+    require(VERSION=='1.0.1','Unexpected app version.')
     index_csv='Company Name,Industry,Symbol,Series,ISIN Code\n'+ '\n'.join(
         f'Test {i},Test,NIFTYTEST{i:02},EQ,INE{i:09}' for i in range(50))
     members=parse_constituents(index_csv)

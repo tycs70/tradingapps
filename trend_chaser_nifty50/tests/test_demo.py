@@ -140,4 +140,7 @@ class DemoDesktopTest(unittest.TestCase):
                 token_store.load.assert_not_called();token_store.save.assert_not_called();token_store.clear.assert_not_called()
                 root.bell.assert_not_called()
                 self.assertFalse(store.path.exists())
+                self.assertIn('disabled',app.import_csv_button.state())
+                app.import_constituents()
+                self.assertFalse((Path(folder)/'nifty50-constituents.json').exists())
             finally:app.close()

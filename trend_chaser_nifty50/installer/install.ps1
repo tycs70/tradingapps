@@ -75,7 +75,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $Source 'uninstall.ps1') -Destination (Join-Path $Root 'uninstall.ps1') -Force
     New-Item -Path $RegPath -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name DisplayName -Value 'Trend Chaser Nifty 50' -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.0' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.1' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name Publisher -Value 'TradingApps' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name InstallLocation -Value $Root -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name DisplayIcon -Value $Shortcut.IconLocation -PropertyType String -Force | Out-Null
@@ -86,7 +86,7 @@ try {
     Set-Content -LiteralPath $Marker -Value 'Trend Chaser Nifty 50 owned installation' -Encoding UTF8
     $Committed = $true
     Write-Host ('Installed into ' + $Root)
-    Write-Host 'Your new Desktop shortcut is ready. Settings and logs have been preserved.'
+    Write-Host 'Your Desktop shortcut is ready. Settings and logs have been preserved.'
 } catch {
     Write-Host ('Installation failed: ' + $_.Exception.Message) -ForegroundColor Red
     if ($Swapped -and -not $Committed) {
