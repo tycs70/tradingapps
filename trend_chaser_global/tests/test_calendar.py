@@ -1,0 +1,40 @@
+from datetime import datetime, timedelta, timezone, date
+import unittest
+from global_trend.calendar import MarketCalendar, trading_day
+
+UTC = timezone.utc
+
+
+class CalendarTest(unittest.TestCase):
+    def test_indian_midnight_does_not_reset_us_trading_day(self):
+        a = datetime(2026,10,15,18,29,tzinfo=UTC)
+        self.assertEqual(trading_day(a), trading_day(a + timedelta(minutes=2)))
+        self.assertEqual(trading_day(a), date(2026,10,15))
+
+    def test_boundary_tracks_new_york_dst(self):
+        for month,day,hour in [(1,15,22),(7,15,21),(3,8,21),(11,1,22)]:
+            t=datetime(2026,month,day,hour,tzinfo=UTC)
+            self.assertNotEqual(trading_day(t-timedelta(seconds=1)),trading_day(t))
+
+    def test_expected_bars_exclude_scheduled_closure(self):
+        # Sunday-based schedule: Monday 09:00–10:00 and 11:00–12:00 UTC.
+        cal=MarketCalendar([(118800,122400),(126000,129600)],'UTC')
+        a=datetime(2026,10,12,9,tzinfo=UTC)
+        self.assertTrue(cal.is_open(a))
+        self.assertFalse(cal.is_open(a+timedelta(hours=1)))
+        bars=cal.expected_buckets(a,a+timedelta(hours=3))
+        self.assertEqual(len(bars),24)
+        self.assertNotIn(a+timedelta(hours=1),bars)
+
+    def test_holiday_and_unknown_schedule_are_closed(self):
+        t=datetime(2026,10,12,9,tzinfo=UTC)
+        self.assertFalse(MarketCalendar().is_open(t))
+        self.assertFalse(MarketCalendar([(0,604800)],'UTC',[t.date()]).is_open(t))
+
+    def test_schedule_uses_reported_timezone(self):
+        cal=MarketCalendar([(118800,122400)],'America/New_York')
+        self.assertTrue(cal.is_open(datetime(2026,10,12,13,tzinfo=UTC)))
+        self.assertFalse(cal.is_open(datetime(2026,10,12,9,tzinfo=UTC)))
+
+
+if __name__ == '__main__': unittest.main()
