@@ -88,6 +88,9 @@ class TrendBook:
         relation = (s.ema9 > s.ema21) - (s.ema9 < s.ema21)
         prior = None if initial else self._relations.get(s.key)
         events = []
+        existing = self.candidates.get(s.key)
+        if initial and existing and relation and (existing.side == 'LONG') != (relation > 0):
+            events += self._remove(s.key,s.quote_time,'Fresh relationship opposes the retained trend.')
         if prior and relation and prior != relation:
             side = 'LONG' if relation > 0 else 'SHORT'
             existing = self.candidates.get(s.key)
@@ -138,7 +141,7 @@ class TrendBook:
         self.candidates[key] = replace(c, checked_through=max(c.checked_through,candle.time))
         return []
 
-    def verified_history(self, key, history, now) -> tuple[list[Event], bool]:
+    def verified_history(self, key, history, now, calendar=None) -> tuple[list[Event], bool]:
         """Check every candle from the capture, including corrected/missed bars.
 
         The caller validates session completeness first. Absent required bars hide
@@ -154,7 +157,10 @@ class TrendBook:
         indices = [i for i,b in enumerate(history.candles) if crossing <= b.time <= last]
         if not indices or history.candles[indices[0]].time != crossing: return [], False
         times = [history.candles[i].time for i in indices]
-        if any(b-a != timedelta(minutes=5) for a,b in zip(times,times[1:])): return [], False
+        if calendar is None:
+            if any(b-a != timedelta(minutes=5) for a,b in zip(times,times[1:])): return [], False
+        elif tuple(times)!=calendar.expected_buckets(crossing,last+timedelta(minutes=5)):
+            return [],False
         events = []
         for i in indices:
             events += self.verified_candle(key,history.candles[i],history.ema9[i],history.ema21[i],revalidate=True)

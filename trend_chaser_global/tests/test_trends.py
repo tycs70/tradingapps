@@ -157,3 +157,23 @@ class TrendBookTest(unittest.TestCase):
         self.assertTrue(self.book.reset_day(NOW.date()+timedelta(days=1),NOW+timedelta(days=1)))
         self.assertFalse(self.book.candidates)
         self.assertEqual(self.book.observe(replace(snap(),quote_time=NOW+timedelta(days=1))),[])
+
+    def test_broker_closure_gap_is_allowed_but_missing_open_bar_is_not(self):
+        from types import SimpleNamespace
+        from global_trend.calendar import MarketCalendar,trading_day
+        start=NOW.replace(day=12,hour=15,minute=25)  # Monday 09:55 UTC.
+        calendar=MarketCalendar([(118800,122400),(126000,129600)],'UTC')
+        c=TrendCandidate('A','A','LONG',start+timedelta(seconds=1),20,'CONFIRMED',start)
+        for gap,valid in [(65,True),(70,False)]:
+            b=TrendBook(trading_day(start),[c])
+            bars=[bar(start),bar(start+timedelta(minutes=gap))]
+            history=SimpleNamespace(candles=bars,ema9=[100,100.1],ema21=[99,99.1])
+            _,result=b.verified_history('A',history,bars[-1].time+timedelta(minutes=5),calendar=calendar)
+            self.assertEqual(result,valid)
+
+    def test_initial_opposing_quote_invalidates_saved_trend_without_new_entry(self):
+        c=TrendCandidate('A','A','LONG',NOW,20,'CONFIRMED',NOW)
+        b=TrendBook(NOW.date(),[c])
+        events=b.observe(snap('SHORT'),initial=True)
+        self.assertFalse(b.candidates)
+        self.assertEqual([e.state for e in events],['TREND_REMOVED'])

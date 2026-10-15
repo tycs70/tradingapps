@@ -1,5 +1,6 @@
 """Spotware demo market data boundary; no order operations are implemented."""
 from dataclasses import dataclass,replace
+from collections import OrderedDict
 from datetime import datetime,timedelta,timezone,date
 import threading
 import time
@@ -63,7 +64,11 @@ class CTraderClient:
         self.transport=transport or ProtoClient()
         self._account_id=None;self._opened=False;self._closed=threading.Event()
         self._history_lock=threading.Lock();self._next_history=0;self._callback=None
+        self._bar_versions=OrderedDict()
         self.transport.subscribe(self._event)
+
+    @property
+    def account_id(self):return self._account_id
 
     def open(self):
         if not self._opened:
@@ -149,9 +154,19 @@ class CTraderClient:
         if not self._callback:return
         if isinstance(message,TransportError):self._callback('disconnected',None)
         elif isinstance(message,OA.ProtoOASpotEvent) and message.ctidTraderAccountId==self._account_id:
-            try:q=decode_spot(message)
-            except (ValueError,OverflowError,OSError):return
-            self._callback('quote',q)
+            if message.HasField('bid') or message.HasField('ask'):
+                try:q=decode_spot(message)
+                except (ValueError,OverflowError,OSError):pass
+                else:self._callback('quote',q)
+            if message.HasField('timestamp'):
+                for bar in message.trendbar:
+                    if bar.period!=Model.M5 or (bar.utcTimestampInMinutes+5)*60000>message.timestamp:continue
+                    key=(message.symbolId,bar.utcTimestampInMinutes)
+                    version=(bar.low,bar.deltaOpen,bar.deltaClose,bar.deltaHigh,bar.volume)
+                    if self._bar_versions.get(key)!=version:
+                        self._bar_versions[key]=version;self._bar_versions.move_to_end(key)
+                        while len(self._bar_versions)>2048:self._bar_versions.popitem(last=False)
+                        self._callback('bar_update',message.symbolId)
         elif isinstance(message,(OA.ProtoOAAccountDisconnectEvent,OA.ProtoOAClientDisconnectEvent)):
             self._callback('disconnected',None)
 

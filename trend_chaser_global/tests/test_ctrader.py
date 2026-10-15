@@ -51,6 +51,7 @@ class CTraderTest(unittest.TestCase):
         self.assertEqual(accounts[0]['account_id'],123)
         self.assertEqual(accounts[0]['login'],5923508)
         self.client.authorize(123,'test-token')
+        self.assertEqual(self.client.account_id,123)
     def test_live_and_unknown_account_modes_are_rejected(self):
         with self.assertRaises(TransportError):self.client.authorize(999,'test-token')
         self.peer.known_live=False
@@ -79,6 +80,17 @@ class CTraderTest(unittest.TestCase):
                                                 ask=123456,timestamp=100000))
         self.assertEqual(len(events),1)
         self.assertEqual(events[0][0],'quote');self.assertIsNone(events[0][1].bid)
+
+    def test_closed_bar_revision_notifies_engine_without_fabricating_bid(self):
+        self.client.authorize(123,'test-token')
+        asset=self.client.resolve([default_catalog()[13]])[0][0];events=[]
+        self.client.subscribe_assets([asset],lambda *args:events.append(args))
+        message=OA.ProtoOASpotEvent(ctidTraderAccountId=123,symbolId=941,timestamp=1005*60000)
+        b=message.trendbar.add(period=Model.M5,low=10000000,deltaOpen=0,deltaClose=10,
+                              deltaHigh=20,utcTimestampInMinutes=1000,volume=1)
+        self.peer.callback(message);self.peer.callback(message)
+        b.deltaClose=15;self.peer.callback(message)
+        self.assertEqual(events,[('bar_update',941),('bar_update',941)])
 
 
 if __name__=='__main__':unittest.main()
