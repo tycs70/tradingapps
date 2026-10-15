@@ -16,12 +16,15 @@ def trading_day(when: datetime, boundary='17:00', zone='America/New_York'):
 
 
 class MarketCalendar:
-    def __init__(self, intervals=(), zone='UTC', holidays=()):
+    def __init__(self, intervals=(), zone='UTC', holidays=(), holiday_rules=()):
         self.zone=ZoneInfo(zone or 'UTC')
         self.intervals=tuple((int(a),int(b)) for a,b in intervals)
         if any(not 0<=a<b<=604800 for a,b in self.intervals):
             raise ValueError('Invalid broker schedule.')
         self.holidays=frozenset(holidays)
+        self.holiday_rules=tuple(dict(r,timezone=ZoneInfo(r['zone'])) for r in holiday_rules)
+        if any(not 0<=r['start']<r['end']<=86400 for r in self.holiday_rules):
+            raise ValueError('Invalid holiday schedule.')
 
     def is_open(self, when):
         if when.tzinfo is None:
@@ -29,6 +32,12 @@ class MarketCalendar:
         t=when.astimezone(self.zone)
         if t.date() in self.holidays:
             return False
+        for rule in self.holiday_rules:
+            h=when.astimezone(rule['timezone'])
+            same=((h.month,h.day)==(rule['date'].month,rule['date'].day)
+                  if rule['recurring'] else h.date()==rule['date'])
+            if same and rule['start']<=h.hour*3600+h.minute*60+h.second<rule['end']:
+                return False
         second=((t.weekday()+1)%7)*86400+t.hour*3600+t.minute*60+t.second
         return any(a<=second<b for a,b in self.intervals)
 

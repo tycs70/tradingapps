@@ -36,5 +36,13 @@ class CalendarTest(unittest.TestCase):
         self.assertTrue(cal.is_open(datetime(2026,10,12,13,tzinfo=UTC)))
         self.assertFalse(cal.is_open(datetime(2026,10,12,9,tzinfo=UTC)))
 
+    def test_recurring_partial_holiday_uses_its_own_timezone(self):
+        rule={'date':date(2020,10,12),'zone':'America/New_York',
+              'start':9*3600,'end':10*3600,'recurring':True}
+        cal=MarketCalendar([(0,604800)],'UTC',holiday_rules=[rule])
+        self.assertTrue(cal.is_open(datetime(2026,10,12,12,59,tzinfo=UTC)))
+        self.assertFalse(cal.is_open(datetime(2026,10,12,13,30,tzinfo=UTC)))
+        self.assertTrue(cal.is_open(datetime(2026,10,12,14,tzinfo=UTC)))
+
 
 if __name__ == '__main__': unittest.main()

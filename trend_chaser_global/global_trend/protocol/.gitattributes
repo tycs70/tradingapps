@@ -1,0 +1,2 @@
+# Keep the pinned upstream schema bytes unchanged; PROVENANCE.json verifies them.
+*.proto -whitespace
