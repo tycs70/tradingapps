@@ -8,6 +8,7 @@ import math
 import queue
 import threading
 import time
+import hashlib,json
 
 from .models import Instrument,Settings,Snapshot,bucket_time
 from .indicators import EMAHistory
@@ -40,6 +41,7 @@ class DisplayRow:
     distance_pct:float|None=None
     reason:str='Waiting for cTrader connection'
     snapshot:Snapshot|None=field(default=None,repr=False)
+    digits:int|None=None
 
 
 @dataclass(frozen=True)
@@ -86,12 +88,26 @@ class Engine:
         self._overflow=threading.Event();self._fatal_overflow=threading.Event();self._stop=threading.Event()
         self._generation=0;self._epoch=0;self._client=None;self._executor=None;self._account=None
         self._connected=False;self._status='Disconnected';self._saved=None
+        self._catalog_token=self._catalog_fingerprint()
         self.events=deque(maxlen=500);self.diagnostics=deque(maxlen=100);self._sequence=0
         self.book=TrendBook(self._day(self.clock()),day_key=self._day)
         self._thread=threading.Thread(target=self._run,name='global-trend-engine',daemon=True)
         self._thread.start()
 
     def _day(self,when):return trading_day(when,self.settings.day_boundary,self.settings.day_zone)
+
+    def _catalog_fingerprint(self):
+        # Scope persisted membership to instrument identity, verification and scoring geometry.
+        values=sorted((e.key,e.group,e.olymp_name,e.ctrader_name,e.verified) for e in self.entries)
+        payload=(values,self.settings.chart_bars,self.settings.angle_intervals,self.settings.day_boundary,self.settings.day_zone)
+        return hashlib.sha256(json.dumps(payload).encode()).hexdigest()[:16]
+
+    def reconfigure(self,settings):
+        self.disconnect()
+        with self._lock:
+            self.settings=settings;self._catalog_token=None
+            self.book=TrendBook(self._day(self.clock()),day_key=self._day)
+            self._persist()
 
     def _enqueue(self,kind,payload,generation,epoch=None):
         if self._stop.is_set() or generation!=self._generation:return
@@ -120,11 +136,13 @@ class Engine:
         with self._lock:
             account=client.account_id
             if not account:raise ValueError('An authorized demo account is required.')
-            if account!=self._account:
+            catalog_token=self._catalog_fingerprint()
+            if account!=self._account or catalog_token!=self._catalog_token:
                 self._account=account;self.events.clear();self._saved=None
+                self._catalog_token=catalog_token
                 if self._store_path is not None:
                     if self.store:self.store.close()
-                    path=self._store_path.with_name(self._store_path.stem+'-'+str(account)+self._store_path.suffix)
+                    path=self._store_path.with_name(self._store_path.stem+'-'+str(account)+'-'+catalog_token+self._store_path.suffix)
                     self.store=TrendStore(path,day_key=self._day)
                 candidates=self.store.load(self._day(self.clock())) if self.store else ()
                 self.book=TrendBook(self._day(self.clock()),candidates,day_key=self._day)
@@ -356,7 +374,7 @@ class Engine:
                     signal_time=candidate.crossover_time if candidate else None,
                     ema9=snap.ema9 if snap else None,ema21=snap.ema21 if snap else None,
                     distance_pct=100*(snap.price-snap.ema9)/snap.ema9 if snap else None,
-                    reason=reason,snapshot=snap)
+                    reason=reason,snapshot=snap,digits=s.asset.digits if s.asset else None)
                 groups[s.entry.group].append((active,view,candidate,snap))
             out={}
             for group,items in groups.items():

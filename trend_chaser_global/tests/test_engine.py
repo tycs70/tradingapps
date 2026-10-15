@@ -85,6 +85,23 @@ class EngineTest(unittest.TestCase):
         self.tick(self.items[2],100.1)
         self.assertEqual(self.row().status,'WATCHING');self.assertIsNone(self.row().rank)
 
+    def test_mapping_change_discards_old_instrument_membership(self):
+        from dataclasses import replace
+        self.cross();self.broker.bars.append(Candle(BUCKET,100,100.2,99.8,100.1,1))
+        self.clock.value=BUCKET+timedelta(minutes=5,seconds=1);self.tick(self.items[2],100.12)
+        wait_for(lambda:self.row().status=='CONFIRMED')
+        changed=replace(self.items[2].entry,ctrader_name='DIFFERENT')
+        self.engine.entries=tuple(changed if e.key==changed.key else e for e in self.engine.entries)
+        self.items[2]=replace(self.items[2],entry=changed,symbol_id=99)
+        self.broker=Broker(self.items,self.broker.bars)
+        self.engine.connect(self.broker,self.items)
+        wait_for(lambda:self.engine.snapshot().counts['history_ready']==3)
+        self.tick(self.items[2],100.15)
+        self.assertIsNone(self.row().rank)
+
+    def test_price_precision_follows_broker_symbol(self):
+        self.assertEqual(self.row().digits,2)
+
     def test_three_groups_rank_independently_and_keep_frozen_score(self):
         for item in self.items:
             self.tick(item,99.9);self.tick(item,100.1)
