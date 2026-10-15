@@ -40,6 +40,8 @@ class Settings:
     angle_intervals: int = 2
     fresh_seconds: int = 15
     remember_token: bool = True
+    day_boundary: str = '17:00'
+    day_zone: str = 'America/New_York'
 
     def __post_init__(self):
         if not math.isfinite(self.proximity_pct) or not .001 <= self.proximity_pct <= .5:
@@ -50,6 +52,14 @@ class Settings:
             raise ValueError('Quote freshness is fixed at 15 seconds.')
         if not isinstance(self.remember_token,bool):
             raise ValueError('Remember token must be enabled or disabled.')
+        from zoneinfo import ZoneInfo
+        try:
+            if not isinstance(self.day_boundary,str):raise ValueError()
+            h,m=map(int,self.day_boundary.split(':'))
+            if not 0<=h<24 or not 0<=m<60:raise ValueError()
+            ZoneInfo(self.day_zone)
+        except (ValueError,KeyError,TypeError):
+            raise ValueError('Enter a valid daily boundary and IANA time zone.') from None
 
 
 @dataclass(frozen=True)
