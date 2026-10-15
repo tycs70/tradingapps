@@ -58,6 +58,11 @@ install or authenticated cTrader service readiness.
    Linux environment without the user's application authorization. Ship the
    independently verified offline package with explicit prerequisites. Cost if
    wrong: platform or broker-specific defects may remain until tested on Windows.
+6. GitHub's release-upload host rejected existing platform authentication (HTTP
+   401), while Git and repository API access worked. Follow the repository's
+   existing `releases/` ZIP convention on a separate download branch, and link
+   those public files from the release. Cost: about 25 MB added to repository
+   history; the source review branch stays free of the binary.
 
 ## Fresh-context review and fixes
 
@@ -80,6 +85,14 @@ had a failing regression followed by a passing check and the final green suite:
 
 No Critical findings or deferred Minor findings remain. The author's fix pass was
 verified by regression tests; a second reviewer pass was not performed.
+
+## Download route
+
+The Windows ZIP and its SHA-256 file are stored under `releases/` on the
+`trend-chaser-global-downloads` branch. The release notes provide direct links.
+The public repository requires no sign-in. Delivery verification retrieves the
+actual ZIP over HTTPS and compares it with the built archive; an API response or
+workspace path alone is not considered a tested download.
 
 ## Connection and use
 
