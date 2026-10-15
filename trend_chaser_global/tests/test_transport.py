@@ -109,5 +109,29 @@ class TransportTest(unittest.TestCase):
             self.assertNotIn('TOPSECRET',str(caught.exception))
         finally:client.close();server.close()
 
+    def test_blocked_payload_metadata_suppresses_all_accounts_until_retry(self):
+        requests=[];clock=[100.0]
+        def handler(conn):
+            d=FrameDecoder()
+            while len(requests)<2:
+                data=conn.recv(65536)
+                if not data:return
+                for body in d.feed(data):
+                    ident,msg=decode_message(body);requests.append(msg)
+                    response=(OA.ProtoOAErrorRes(errorCode='BLOCKED_PAYLOAD_TYPE',retryAfter=120,description='TOPSECRET')
+                              if len(requests)==1 else OA.ProtoOASymbolsListRes(ctidTraderAccountId=456))
+                    conn.sendall(encode_frame(encode_message(response,ident)))
+        server=TLSFixture(self.cert,self.key,handler);client=self.client(server)
+        client._clock=lambda:clock[0]
+        try:
+            with self.assertRaises(TransportError) as caught:client.request(OA.ProtoOASymbolsListReq(ctidTraderAccountId=123))
+            self.assertEqual(caught.exception.retry_after,120)
+            self.assertNotIn('TOPSECRET',str(caught.exception))
+            with self.assertRaises(TransportError):client.request(OA.ProtoOASymbolsListReq(ctidTraderAccountId=456))
+            self.assertEqual(len(requests),1)
+            clock[0]+=121
+            self.assertIsInstance(client.request(OA.ProtoOASymbolsListReq(ctidTraderAccountId=456)),OA.ProtoOASymbolsListRes)
+        finally:client.close();server.close()
+
 
 if __name__=='__main__':unittest.main()

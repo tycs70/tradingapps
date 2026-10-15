@@ -85,7 +85,8 @@ class ConnectionPanel(ttk.Frame):
         if not c.account or not self.mappings:
             self.message.set('Connect the demo account once before editing its instrument mappings.');return
         window=tk.Toplevel(self);window.title('Instrument mappings · current demo account');window.geometry('940x570')
-        rows=list(self.mappings.load(c.account));selected=[None]
+        account=c.account;session=c._generation
+        rows=list(self.mappings.load(account));selected=[None]
         ttk.Label(window,text='Verify the same underlying, contract and availability in Olymp Trade before confirming.',padding=12).pack(anchor='w')
         tree=ttk.Treeview(window,columns=('group','olymp','ctrader','verified'),show='headings',height=10)
         for col in ('group','olymp','ctrader','verified'):tree.heading(col,text=col.title());tree.column(col,width=180)
@@ -126,8 +127,10 @@ class ConnectionPanel(ttk.Frame):
         def remove():
             if selected[0] is not None:rows.pop(selected[0]);selected[0]=None;render()
         def save():
+            if c.account!=account or c._generation!=session:
+                info.set('The account or session changed. Close this editor and reopen mappings for the selected account.');return
             try:
-                self.mappings.save(c.account,rows);c.disconnect();self.message.set('Mappings saved. Connect data to reload and revalidate history.');window.destroy()
+                self.mappings.save(account,rows);c.disconnect();self.message.set('Mappings saved. Connect data to reload and revalidate history.');window.destroy()
             except (OSError,ValueError):info.set('Mappings could not be saved. Check the rows and data directory.')
         bar=ttk.Frame(window,padding=12);bar.pack(fill='x')
         for text,action in (('New row',new),('Update row',update),('Remove row',remove),('Save and disconnect',save)):

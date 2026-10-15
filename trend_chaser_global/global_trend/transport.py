@@ -13,6 +13,11 @@ MAX_FRAME=16*1024*1024
 
 class TransportError(RuntimeError):pass
 
+class RateLimitError(TransportError):
+    def __init__(self,retry_after,payload_type):
+        self.retry_after=max(1,float(retry_after));self.payload_type=int(payload_type)
+        super().__init__('cTrader temporarily blocked this request type. Waiting before retrying.')
+
 
 def encode_frame(payload):
     if not 0<len(payload)<=MAX_FRAME:raise ValueError('Invalid protocol frame length.')
@@ -43,6 +48,7 @@ class ProtoClient:
         self._connect_lock=threading.Lock();self._send_lock=threading.Lock()
         self._pending_lock=threading.Lock();self._pending={};self._callbacks=[]
         self._last_sent=time.monotonic()
+        self._clock=time.monotonic;self._blocked_until={}
 
     @property
     def pending_count(self):
@@ -72,20 +78,33 @@ class ProtoClient:
             self._last_sent=time.monotonic()
 
     def request(self,message,timeout=10.0):
+        payload_type=int(message.payloadType)
+        self._check_blocked(payload_type)
         self.connect();ident=uuid.uuid4().hex;result=queue.Queue(maxsize=1)
         with self._pending_lock:
             if len(self._pending)>=128:raise TransportError('Too many pending cTrader requests.')
             self._pending[ident]=result
         try:
+            self._check_blocked(payload_type)
             self._send(message,ident)
             try:value=result.get(timeout=timeout)
             except queue.Empty:raise TransportError('cTrader request timed out.') from None
             if isinstance(value,Exception):raise value
             if isinstance(value,(OA.ProtoOAErrorRes,Common.ProtoErrorRes)):
+                if value.errorCode=='BLOCKED_PAYLOAD_TYPE':
+                    retry=value.retryAfter if isinstance(value,OA.ProtoOAErrorRes) and value.HasField('retryAfter') else 60
+                    retry=max(1,int(retry))
+                    with self._pending_lock:
+                        self._blocked_until[payload_type]=max(self._blocked_until.get(payload_type,0),self._clock()+retry)
+                    raise RateLimitError(retry,payload_type)
                 raise TransportError('cTrader rejected the request. Check authorization and account permissions.')
             return value
         finally:
             with self._pending_lock:self._pending.pop(ident,None)
+
+    def _check_blocked(self,payload_type):
+        with self._pending_lock:remaining=self._blocked_until.get(payload_type,0)-self._clock()
+        if remaining>0:raise RateLimitError(remaining,payload_type)
 
     def _fail_pending(self):
         with self._pending_lock:

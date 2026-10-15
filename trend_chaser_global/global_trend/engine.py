@@ -17,6 +17,7 @@ from .ranking import rank_group
 from .catalog import GROUPS,default_catalog
 from .calendar import trading_day
 from .storage import TrendStore
+from .transport import RateLimitError
 
 UTC=timezone.utc
 
@@ -205,14 +206,18 @@ class Engine:
         generation,epoch,request_id=self._generation,self._epoch,s.request_id
         client=self._client;asset=s.asset
         def load():
+            retry=2
             try:
                 end=self.clock();bars=client.history(asset,end-timedelta(days=3),end)
                 if len(bars)<100:bars=client.history(asset,end-timedelta(days=14),end)
                 self._validate_history(asset,bars,self.clock())
                 result,error=bars,''
             except HistoryError as exc:result,error=None,str(exc)
+            except RateLimitError as exc:
+                result,error=None,'cTrader history rate limit; waiting for the broker retry time'
+                retry=max(2,exc.retry_after)
             except Exception:result,error=None,'History loading failed; check data access and retry'
-            self._enqueue('history',(s.entry.key,request_id,result,error),generation,epoch)
+            self._enqueue('history',(s.entry.key,request_id,result,error,retry),generation,epoch)
         try:self._executor.submit(load)
         except RuntimeError:s.pending=False
 
@@ -259,14 +264,22 @@ class Engine:
                 self._connected=True;self._status='Connected · cTrader Spotware Demo'
                 for s in self._states.values():self._request_history(s)
             elif kind=='history':
-                key,request_id,bars,error=payload;s=self._states.get(key)
+                key,request_id,bars,error,retry=payload;s=self._states.get(key)
                 if not s or request_id!=s.request_id:return
                 s.pending=False
                 if s.history_dirty:
                     s.history_dirty=False;s.validated_bucket=None;s.retry_at=None
                     self._request_history(s);return
                 if error:
-                    s.validated_bucket=None;s.reason=error;s.retry_at=self.clock()+timedelta(seconds=2)
+                    s.validated_bucket=None;s.reason=error
+                    try:s.retry_at=self.clock()+timedelta(seconds=retry)
+                    except OverflowError:s.retry_at=datetime.max.replace(tzinfo=UTC)
+                    return
+                # Time may advance between worker validation and FIFO consumption.
+                # Only coverage checked against this bucket can become actionable.
+                try:self._validate_history(s.asset,bars,self.clock())
+                except HistoryError as exc:
+                    s.validated_bucket=None;s.reason=str(exc);s.retry_at=self.clock()+timedelta(seconds=2)
                     return
                 s.history=EMAHistory(bars,Instrument(s.entry.olymp_name,s.entry.key))
                 events,valid=self.book.verified_history(key,s.history,self.clock(),calendar=s.asset.schedule)

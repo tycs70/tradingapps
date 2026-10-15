@@ -74,3 +74,52 @@ class DashboardTest(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+@unittest.skipUnless(os.environ.get('DISPLAY') or os.name=='nt','Requires a display')
+class ConnectedDashboardTest(unittest.TestCase):
+    def test_real_engine_fixture_reaches_ranked_and_stale_widget_states(self):
+        from tests.test_engine import Clock,assets,Broker,wait_for
+        from global_trend.engine import Engine
+        clock=Clock();items=assets();broker=Broker(items)
+        engine=Engine(clock=clock,entries=[a.entry for a in items]);root=tk.Tk()
+        with tempfile.TemporaryDirectory() as t:
+            app=App(root,engine,SettingsStore(Path(t)/'settings'),CredentialStore(Path(t)/'creds'))
+            try:
+                engine.connect(broker,items)
+                wait_for(lambda:engine.snapshot().counts['history_ready']==3)
+                broker.emit(items[2],99.9,clock());wait_for(lambda:engine.snapshot().counts['fresh']==1)
+                clock.advance(1);broker.emit(items[2],100.1,clock())
+                wait_for(lambda:engine.snapshot().counts['ranked']==1)
+                root.update();app.refresh()
+                tree=app.sections['Shares'].tree
+                self.assertIn('LONG',tree.item('STOCK')['tags'])
+                app.select_asset('STOCK');clock.advance(16);app.refresh()
+                self.assertIn('INACTIVE',tree.item('STOCK')['tags'])
+                self.assertIn('STALE',tree.item('STOCK')['values'])
+                self.assertIn('STALE',app.detail.get())
+            finally:app.close()
+
+    def test_mapping_dialog_cannot_write_into_a_different_selected_account(self):
+        from global_trend.ui_connection import ConnectionPanel
+        from global_trend.connection import MappingStore
+        from global_trend.catalog import CatalogEntry,default_catalog
+        from tests.test_connection import Engine
+        with tempfile.TemporaryDirectory() as t:
+            root=tk.Tk();store=MappingStore(Path(t)/'mappings.json')
+            original=(CatalogEntry('ONLY_A','Shares','Account A asset','BROKER A',True),)
+            store.save(123,original)
+            panel=ConnectionPanel(root,Engine(),CredentialStore(Path(t)/'creds'),store)
+            try:
+                panel.controller.account=123;panel.edit_mappings();root.update()
+                window=next(w for w in panel.winfo_children() if isinstance(w,tk.Toplevel))
+                panel.controller.account=456
+                def buttons(widget):
+                    for child in widget.winfo_children():
+                        if isinstance(child,ttk.Button):yield child
+                        yield from buttons(child)
+                from tkinter import ttk
+                next(b for b in buttons(window) if b.cget('text')=='Save and disconnect').invoke()
+                self.assertEqual(store.load(456),default_catalog())
+                self.assertEqual(store.load(123),original)
+            finally:panel.close();root.destroy()

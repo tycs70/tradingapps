@@ -42,5 +42,17 @@ try {
     Test-Bundle $Bundle
     Set-Content -LiteralPath $File -Value 'corrupt'
     Must-Throw { Test-Bundle $Bundle }
+    $Existing = Join-Path $Temp 'existing-shortcut.lnk'
+    $New = Join-Path $Temp 'new-shortcut.lnk'
+    Set-Content -LiteralPath $Existing -Value 'user original'
+    $Saved = Backup-IntegrationFiles @($Existing,$New) (Join-Path $Temp 'integration-backup')
+    Set-Content -LiteralPath $Existing -Value 'overwritten'
+    Set-Content -LiteralPath $New -Value 'new'
+    Restore-IntegrationFiles $Saved
+    Assert ((Get-Content -LiteralPath $Existing).Trim() -eq 'user original') 'Existing shortcut was not restored.'
+    Assert (-not (Test-Path -LiteralPath $New)) 'New shortcut was not rolled back.'
+    $FakeShell = New-Object PSObject
+    $FakeShell | Add-Member ScriptMethod CreateShortcut { param($Path) return [PSCustomObject]@{TargetPath='unrelated.exe'} }
+    Must-Throw { Assert-OwnedShortcut $Existing 'owned.exe' $FakeShell }
     Write-Host 'Installer filesystem checks passed: quoted/Unicode paths, ownership, safe swap, rollback, preserved data, corruption.'
 } finally { if (Test-Path -LiteralPath $Temp) { Remove-Item -LiteralPath $Temp -Recurse -Force } }

@@ -102,6 +102,48 @@ class EngineTest(unittest.TestCase):
     def test_price_precision_follows_broker_symbol(self):
         self.assertEqual(self.row().digits,2)
 
+    def test_queued_history_cannot_claim_coverage_of_a_later_candle(self):
+        self.cross();original=self.engine._enqueue;queued=threading.Event();release=threading.Event()
+        def hold(kind,payload,generation,epoch=None):
+            if kind=='history' and payload[0]=='STOCK':
+                queued.set();release.wait(3)
+            return original(kind,payload,generation,epoch)
+        self.engine._enqueue=hold
+        try:
+            self.broker.callback('bar_update',self.items[2].symbol_id)
+            self.assertTrue(queued.wait(2))
+            self.clock.value=BUCKET+timedelta(minutes=5,seconds=1)
+            release.set();self.tick(self.items[2],100.12)
+            wait_for(lambda:not self.engine.snapshot().counts['history_pending'])
+            self.assertIsNone(self.row().rank)
+            self.assertNotEqual(self.row().status,'PROVISIONAL')
+        finally:release.set();self.engine._enqueue=original
+
+    def test_partial_open_session_bar_is_valid_but_cannot_be_missing(self):
+        from dataclasses import replace
+        start=BUCKET-timedelta(minutes=5)
+        second=((start.weekday()+1)%7)*86400+start.hour*3600+start.minute*60
+        # Prior full session, then a one-minute reopen inside the final completed bar.
+        cal=MarketCalendar([(0,second),(second+60,second+120),(second+300,604800)],'UTC')
+        item=replace(self.items[2],schedule=cal)
+        bars=seed_bars()
+        self.engine._validate_history(item,bars,self.clock())
+        with self.assertRaises(ValueError):self.engine._validate_history(item,bars[:-1],self.clock())
+
+    def test_broker_retry_after_defers_history_retries(self):
+        from global_trend.transport import RateLimitError
+        original=self.broker.history;calls=[]
+        def blocked(asset,start,end):
+            if asset.entry.key=='STOCK':calls.append(self.clock());raise RateLimitError(120,2137)
+            return original(asset,start,end)
+        self.broker.history=blocked
+        self.broker.callback('bar_update',self.items[2].symbol_id)
+        wait_for(lambda:len(calls)==1 and not self.engine.snapshot().counts['history_pending'])
+        self.clock.advance(3);self.engine.snapshot();time.sleep(.03)
+        self.assertEqual(len(calls),1)
+        self.clock.advance(118)
+        wait_for(lambda:len(calls)==2)
+
     def test_three_groups_rank_independently_and_keep_frozen_score(self):
         for item in self.items:
             self.tick(item,99.9);self.tick(item,100.1)

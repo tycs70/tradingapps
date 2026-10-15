@@ -1,5 +1,5 @@
 """Broker schedules and the global desk's daily trend-membership boundary."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone,time
 from zoneinfo import ZoneInfo
 
 UTC = timezone.utc
@@ -47,7 +47,44 @@ class MarketCalendar:
         if t<start:t+=timedelta(minutes=5)
         out=[]
         while t+timedelta(minutes=5)<=end:
-            if self.is_open(t) and self.is_open(t+timedelta(minutes=5,microseconds=-1)):
+            if self.overlaps(t,t+timedelta(minutes=5)):
                 out.append(t)
             t+=timedelta(minutes=5)
         return tuple(out)
+
+    def overlaps(self,start,end):
+        """A partial M5 candle exists whenever any portion is tradable."""
+        last=end-timedelta(microseconds=1)
+        if self.is_open(start) or self.is_open(last):return True
+        points=set()
+        # Opening instants cover sessions fully contained inside the candle.
+        weeks=set()
+        for instant in (start,last):
+            local=instant.astimezone(self.zone)
+            weeks.add(local.date()-timedelta(days=(local.weekday()+1)%7))
+        for week in weeks:
+            for a,b in self.intervals:
+                naive=datetime.combine(week,time())+timedelta(seconds=a)
+                for fold in (0,1):points.add(naive.replace(tzinfo=self.zone,fold=fold).astimezone(UTC))
+        # A partial holiday can end inside a still-open broker session.
+        for rule in self.holiday_rules:
+            zone=rule['timezone']
+            dates={instant.astimezone(zone).date() for instant in (start,last)}
+            for day in dates:
+                matches=((day.month,day.day)==(rule['date'].month,rule['date'].day)
+                         if rule['recurring'] else day==rule['date'])
+                if matches:
+                    naive=datetime.combine(day,time())+timedelta(seconds=rule['end'])
+                    for fold in (0,1):points.add(naive.replace(tzinfo=zone,fold=fold).astimezone(UTC))
+        # A DST jump can enter an already-started local-time session.
+        zones={self.zone}|{r['timezone'] for r in self.holiday_rules}
+        for zone in zones:
+            before=start.astimezone(zone).utcoffset()
+            if before!=last.astimezone(zone).utcoffset():
+                lo,hi=start,last
+                while (hi-lo).total_seconds()>0.000001:
+                    mid=lo+(hi-lo)/2
+                    if mid.astimezone(zone).utcoffset()==before:lo=mid
+                    else:hi=mid
+                points.add(hi)
+        return any(start<=p<end and self.is_open(p) for p in points)

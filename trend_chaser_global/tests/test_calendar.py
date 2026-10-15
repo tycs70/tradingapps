@@ -44,5 +44,19 @@ class CalendarTest(unittest.TestCase):
         self.assertFalse(cal.is_open(datetime(2026,10,12,13,30,tzinfo=UTC)))
         self.assertTrue(cal.is_open(datetime(2026,10,12,14,tzinfo=UTC)))
 
+    def test_partial_session_and_holiday_reopening_produce_a_bar(self):
+        a=datetime(2026,10,12,13,30,tzinfo=UTC);sec=86400+13*3600+30*60
+        self.assertEqual(MarketCalendar([(sec+60,sec+120)]).expected_buckets(a,a+timedelta(minutes=5)),(a,))
+        rule={'date':a.date(),'zone':'UTC','start':0,'end':13*3600+31*60,'recurring':False}
+        cal=MarketCalendar([(sec,sec+120)],holiday_rules=[rule])
+        self.assertEqual(cal.expected_buckets(a,a+timedelta(minutes=5)),(a,))
+
+    def test_dst_jump_into_short_session_is_not_a_closed_bar(self):
+        a=datetime(2026,3,8,6,59,tzinfo=UTC).replace(minute=55)
+        # DST jumps 01:59:59 to 03:00; 02:30–03:02 yields a partial 07:00 UTC candle.
+        cal=MarketCalendar([(2*3600+30*60,3*3600+2*60)],'America/New_York')
+        start=datetime(2026,3,8,7,tzinfo=UTC)
+        self.assertIn(start,cal.expected_buckets(a,start+timedelta(minutes=5)))
+
 
 if __name__ == '__main__': unittest.main()

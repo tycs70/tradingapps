@@ -39,3 +39,32 @@ function Swap-Program([string]$StagedProgram, [string]$Program, [string]$Backup)
         throw
     }
 }
+
+function Assert-OwnedShortcut([string]$Path, [string]$ExpectedTarget, $Shell) {
+    if (Test-Path -LiteralPath $Path) {
+        $Link = $Shell.CreateShortcut($Path)
+        if (-not [String]::Equals($Link.TargetPath,$ExpectedTarget,[StringComparison]::OrdinalIgnoreCase)) {
+            throw ('An unrelated shortcut already exists: ' + $Path + '. Rename it before installing.')
+        }
+    }
+}
+
+function Backup-IntegrationFiles([string[]]$Paths,[string]$Folder) {
+    New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+    $Records = @()
+    foreach ($Path in $Paths) {
+        $Exists = Test-Path -LiteralPath $Path
+        if ($Exists -and -not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Integration path is not a regular file.' }
+        $Copy = Join-Path $Folder ([string]$Records.Count)
+        if ($Exists) { Copy-Item -LiteralPath $Path -Destination $Copy -ErrorAction Stop }
+        $Records += [PSCustomObject]@{Path=$Path;Existed=$Exists;Backup=$Copy}
+    }
+    return $Records
+}
+
+function Restore-IntegrationFiles($Records) {
+    foreach ($Record in $Records) {
+        if ($Record.Existed) { Copy-Item -LiteralPath $Record.Backup -Destination $Record.Path -Force -ErrorAction Stop }
+        elseif (Test-Path -LiteralPath $Record.Path) { Remove-Item -LiteralPath $Record.Path -Force -ErrorAction Stop }
+    }
+}

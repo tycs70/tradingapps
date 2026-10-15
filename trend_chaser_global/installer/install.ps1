@@ -15,6 +15,10 @@ $LockStream = $null
 $InstallGuard = $null
 $Swapped = $false
 $Committed = $false
+$IntegrationSaved = $false
+$IntegrationChanged = $false
+$RegistryBackup = $null
+$RollbackFailed = $false
 $HadProgram = Test-Path -LiteralPath $Program
 $HadDesktop = Test-Path -LiteralPath $DesktopLink
 $HadMenu = Test-Path -LiteralPath $MenuDir
@@ -52,6 +56,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The offline Python/Tk startup check failed.' }
     Write-Host 'Creating the Desktop and Start Menu shortcuts...'
     $Shell = New-Object -ComObject WScript.Shell
+    $Target = Join-Path $Program 'runtime\pythonw.exe'
+    $MenuLink = Join-Path $MenuDir 'Trend Chaser Global.lnk'
+    $DemoLink = Join-Path $MenuDir 'Trend Chaser Global - Offline Sample.lnk'
+    foreach ($Link in @($DesktopLink,$MenuLink,$DemoLink)) { Assert-OwnedShortcut $Link $Target $Shell }
+    if ($HadRegistry) {
+        $ExistingLocation = (Get-ItemProperty -LiteralPath $RegPath -Name InstallLocation -ErrorAction Stop).InstallLocation
+        if (-not [String]::Equals($ExistingLocation,$Root,[StringComparison]::OrdinalIgnoreCase)) { throw 'An unrelated uninstall registration already exists.' }
+        $RegistryBackup = Join-Path $Stage 'registry-backup.reg'
+        & reg.exe export 'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Trend_Chaser_Global' $RegistryBackup /y | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not back up the existing uninstall registration.' }
+    }
+    $IntegrationFiles = Backup-IntegrationFiles @($DesktopLink,$MenuLink,$DemoLink,(Join-Path $Root 'uninstall.ps1')) (Join-Path $Stage 'integration-backup')
+    $IntegrationSaved = $true
     $Shortcut = $Shell.CreateShortcut((Join-Path $Stage 'app.lnk'))
     $Shortcut.TargetPath = Join-Path $Program 'runtime\pythonw.exe'
     $Shortcut.Arguments = '-E -s "' + (Join-Path $Program 'app\run_app.pyw') + '"'
@@ -61,6 +78,7 @@ try {
     $Shortcut.Save()
     Swap-Program $StagedProgram $Program $Backup
     $Swapped = $true
+    $IntegrationChanged = $true
     New-Item -ItemType Directory -Path $MenuDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $Stage 'app.lnk') -Destination $DesktopLink -Force
     Copy-Item -LiteralPath (Join-Path $Stage 'app.lnk') -Destination (Join-Path $MenuDir 'Trend Chaser Global.lnk') -Force
@@ -87,10 +105,22 @@ try {
     Write-Host 'Your new Desktop shortcut is ready. Settings and logs have been preserved.'
 } catch {
     Write-Host ('Installation failed: ' + $_.Exception.Message) -ForegroundColor Red
-    if ($Swapped -and -not $Committed) {
-        if (Test-Path -LiteralPath $Program) { Remove-Item -LiteralPath $Program -Recurse -Force }
+    try {
+        if ($Swapped -and -not $Committed) {
+            if (Test-Path -LiteralPath $Program) { Remove-Item -LiteralPath $Program -Recurse -Force }
+        }
+        if (-not $Committed -and (Test-Path -LiteralPath $Backup)) { Move-Item -LiteralPath $Backup -Destination $Program }
+    } catch { $RollbackFailed = $true; Write-Host ('Program rollback needs manual recovery from: ' + $Backup) -ForegroundColor Red }
+    if (-not $Committed -and $IntegrationSaved -and $IntegrationChanged) {
+        try {
+            Restore-IntegrationFiles $IntegrationFiles
+            if ($HadRegistry) {
+                if (Test-Path -LiteralPath $RegPath) { Remove-Item -LiteralPath $RegPath -Recurse -Force }
+                & reg.exe import $RegistryBackup | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Registry restore failed.' }
+            }
+        } catch { $RollbackFailed = $true; Write-Host ('Integration rollback needs manual recovery from: ' + $Stage) -ForegroundColor Red }
     }
-    if (-not $Committed -and (Test-Path -LiteralPath $Backup)) { Move-Item -LiteralPath $Backup -Destination $Program }
     if (-not $Committed -and -not $HadDesktop -and (Test-Path -LiteralPath $DesktopLink)) { Remove-Item -LiteralPath $DesktopLink -Force }
     if (-not $Committed -and -not $HadMenu -and (Test-Path -LiteralPath $MenuDir)) { Remove-Item -LiteralPath $MenuDir -Recurse -Force }
     if (-not $Committed -and -not $HadRegistry -and (Test-Path -LiteralPath $RegPath)) { Remove-Item -LiteralPath $RegPath -Recurse -Force }
@@ -99,7 +129,7 @@ try {
 } finally {
     if ($LockStream) { $LockStream.Dispose() }
     if ($InstallGuard) { $InstallGuard.Dispose() }
-    if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
+    if (-not $RollbackFailed -and (Test-Path -LiteralPath $Stage)) { Remove-Item -LiteralPath $Stage -Recurse -Force }
     if ($Committed -and (Test-Path -LiteralPath $Backup)) { Remove-Item -LiteralPath $Backup -Recurse -Force }
     try { Stop-Transcript | Out-Null } catch { }
 }
