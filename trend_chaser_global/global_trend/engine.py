@@ -17,7 +17,7 @@ from .ranking import rank_group
 from .catalog import GROUPS,default_catalog
 from .calendar import trading_day
 from .storage import TrendStore
-from .transport import RateLimitError
+from .transport import RateLimitError,AuthorizationError
 
 UTC=timezone.utc
 
@@ -89,6 +89,7 @@ class Engine:
         self._overflow=threading.Event();self._fatal_overflow=threading.Event();self._stop=threading.Event()
         self._generation=0;self._epoch=0;self._client=None;self._executor=None;self._account=None
         self._connected=False;self._status='Disconnected';self._saved=None
+        self._connection_state='idle';self._connection_retry_after=0
         self._catalog_token=self._catalog_fingerprint()
         self.events=deque(maxlen=500);self.diagnostics=deque(maxlen=100);self._sequence=0
         self.book=TrendBook(self._day(self.clock()),day_key=self._day)
@@ -96,6 +97,14 @@ class Engine:
         self._thread.start()
 
     def _day(self,when):return trading_day(when,self.settings.day_boundary,self.settings.day_zone)
+
+    @property
+    def connection_state(self):
+        with self._lock:return self._connection_state
+
+    @property
+    def connection_retry_after(self):
+        with self._lock:return self._connection_retry_after
 
     def _catalog_fingerprint(self):
         # Scope persisted membership to instrument identity, verification and scoring geometry.
@@ -148,6 +157,7 @@ class Engine:
                 candidates=self.store.load(self._day(self.clock())) if self.store else ()
                 self.book=TrendBook(self._day(self.clock()),candidates,day_key=self._day)
             self._client=client;self._status='Loading cTrader symbols and subscriptions'
+            self._connection_state='connecting';self._connection_retry_after=0
             self._states={e.key:_AssetState(e) for e in self.entries};self._by_id={}
             self._executor=ThreadPoolExecutor(max_workers=3,thread_name_prefix='ctrader-history')
             generation=self._generation;executor=self._executor
@@ -157,6 +167,10 @@ class Engine:
                 self._enqueue('assets',(resolved,reasons),generation)
                 client.subscribe_assets(resolved,lambda kind,payload:self._enqueue(kind,payload,generation))
                 self._enqueue('connected',None,generation)
+            except AuthorizationError:
+                self._enqueue('connection_error','authorization',generation)
+            except RateLimitError as exc:
+                self._enqueue('connection_error',('rate_limit',exc.retry_after),generation)
             except Exception:
                 self._enqueue('connection_error',None,generation)
         executor.submit(prepare)
@@ -164,6 +178,7 @@ class Engine:
     def disconnect(self):
         with self._lock:
             self._generation+=1;self._epoch+=1;self._connected=False;self._status='Disconnected'
+            self._connection_state='idle';self._connection_retry_after=0
             self._drain();self._overflow.clear();self._fatal_overflow.clear()
             client=self._client;executor=self._executor;self._client=None;self._executor=None
             for s in self._states.values():
@@ -213,6 +228,9 @@ class Engine:
                 self._validate_history(asset,bars,self.clock())
                 result,error=bars,''
             except HistoryError as exc:result,error=None,str(exc)
+            except AuthorizationError:
+                self._enqueue('connection_error','authorization',generation,epoch)
+                return
             except RateLimitError as exc:
                 result,error=None,'cTrader history rate limit; waiting for the broker retry time'
                 retry=max(2,exc.retry_after)
@@ -262,6 +280,7 @@ class Engine:
                     if not s.asset:s.reason=reasons.get(key,'Symbol not offered by this account')
             elif kind=='connected':
                 self._connected=True;self._status='Connected · cTrader Spotware Demo'
+                self._connection_state='connected'
                 for s in self._states.values():self._request_history(s)
             elif kind=='history':
                 key,request_id,bars,error,retry=payload;s=self._states.get(key)
@@ -309,9 +328,17 @@ class Engine:
                     s.history_dirty=s.pending
                     self._request_history(s)
             elif kind in ('disconnected','connection_error'):
+                reason,retry=payload if isinstance(payload,tuple) and len(payload)==2 else (payload,0)
                 self.disconnect()
-                self._status=('cTrader connection interrupted; reconnect to revalidate' if kind=='disconnected'
-                              else 'Unable to prepare cTrader data; check authorization and network')
+                self._connection_state='authorization_required' if reason=='authorization' else 'interrupted'
+                if isinstance(retry,(int,float)) and math.isfinite(retry):self._connection_retry_after=max(0,retry)
+                messages={'remote_closed':'server closed the connection','tls':'TLS connection interrupted',
+                          'socket':'network socket interrupted','network':'network connection interrupted',
+                          'protocol':'invalid protocol data received','processing':'data processing interrupted',
+                          'server':'server ended the session','rate_limit':'broker retry delay in effect'}
+                if reason=='authorization':self._status='cTrader authorization ended; authorize again'
+                else:self._status='cTrader connection interrupted: '+messages.get(reason,'data connection interrupted')
+                self.diagnostics.append(self._status)
 
     def _maintenance(self):
         now=self.clock();day=self._day(now)
@@ -322,6 +349,7 @@ class Engine:
                 s.needs_baseline=True;s.retry_at=None;s.history_dirty=False
         if self._fatal_overflow.is_set():
             self.disconnect();self._status='Input queue overloaded; reconnect to revalidate'
+            self._connection_state='interrupted'
             self.diagnostics.append(self._status);return
         if self._overflow.is_set():
             self._epoch+=1

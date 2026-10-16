@@ -2,11 +2,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict,replace
 from datetime import datetime,timezone
-import json,os,queue,re,tempfile,threading
+import json,os,queue,re,tempfile,threading,time
 from pathlib import Path
 from .auth import OAuthSession,TokenBundle
 from .catalog import CatalogEntry,GROUPS,default_catalog
 from .ctrader import CTraderClient
+from .auth import AuthError
+from .transport import AuthorizationError,RateLimitError
 
 
 class MappingStore:
@@ -49,19 +51,24 @@ class MappingStore:
 
 
 class ConnectionController:
-    def __init__(self,engine,credentials,mappings=None,client_factory=CTraderClient,oauth_factory=OAuthSession):
+    def __init__(self,engine,credentials,mappings=None,client_factory=CTraderClient,oauth_factory=OAuthSession,clock=None):
         self.engine=engine;self.credentials=credentials;self.mappings=mappings
         self.client_factory=client_factory;self.oauth_factory=oauth_factory
         self.tokens=None;self.accounts=();self.account=None;self.config=None;self.oauth=None
         self.remember=False;self.message='Enter your registered cTrader application details.'
         self.busy=False;self.closed=False;self._generation=0;self._active=None
+        self._auth_generation=0;self._job_serial=0;self._busy_job=None
+        self._renewal_auth=None
         self._pending=set();self._lock=threading.Lock();self._results=queue.Queue()
         self._executor=ThreadPoolExecutor(max_workers=2,thread_name_prefix='ctrader-connect')
+        self._clock=clock or time.monotonic;self._wanted=False;self._desired_account=None
+        self._retry_at=None;self._retry_attempt=0;self._stable_since=None
     def configure(self,client_id,secret,redirect):
         config=(client_id.strip(),secret.strip(),redirect.strip())
         oauth=self.oauth_factory(*config)
         if config!=self.config:
             self.disconnect();self.tokens=None;self.accounts=();self.account=None
+            self._auth_generation+=1
         self.config=config;self.oauth=oauth
     def restore(self):
         data=self.credentials.load()
@@ -80,14 +87,19 @@ class ConnectionController:
     def _job(self,kind,work):
         if self.closed:raise ValueError('Connection is closed.')
         if self.busy:raise ValueError('Wait for the current connection step.')
-        self.busy=True;generation=self._generation
+        self.busy=True;generation=self._generation;auth_generation=self._auth_generation
+        self._job_serial+=1;job=self._job_serial;self._busy_job=job
         def run():
-            try:result=work(generation);error=False
-            except Exception:result=None;error=True
-            self._results.put((generation,kind,result,error))
+            try:result=work(generation);error=None
+            except (AuthError,AuthorizationError):result=None;error=('authorization',0)
+            except RateLimitError as exc:result=None;error=('rate_limit',exc.retry_after)
+            except Exception:result=None;error=('connection',0)
+            self._results.put((generation,auth_generation,job,kind,result,error))
         self._executor.submit(run)
     def exchange(self,code):
         if not self.oauth:raise ValueError('Enter application details first.')
+        if self.closed or self.busy:raise ValueError('Wait for the current connection step.')
+        self._auth_generation+=1
         oauth=self.oauth
         self._job('tokens',lambda g:oauth.exchange(code))
         self.message='Exchanging the authorization code…'
@@ -109,8 +121,13 @@ class ConnectionController:
             with self._lock:self._pending.discard(client)
             raise
         self.message='Loading authorized demo accounts…'
-    def connect(self,account):
+    def connect(self,account,automatic=False):
         if not any(a['account_id']==account for a in self.accounts):raise ValueError('Select an authorized demo account.')
+        if self.closed or self.busy:raise ValueError('Wait for the current connection step.')
+        if automatic and not self._wanted:return
+        # End the previous stream before opening another connection for the account.
+        self.engine.disconnect()
+        if self._active:self._active.close();self._active=None
         client=self._client();tokens=self.tokens
         def work(g):
             try:
@@ -126,21 +143,48 @@ class ConnectionController:
             client.close()
             with self._lock:self._pending.discard(client)
             raise
+        self._wanted=True;self._desired_account=account;self._retry_at=None;self._stable_since=None
+        if not automatic:self._retry_attempt=0
         self.message='Authenticating the selected demo account…'
     def poll(self):
+        if self.closed:return
+        self._observe_connection_state()
         while True:
-            try:g,kind,result,error=self._results.get_nowait()
+            try:g,auth_g,job,kind,result,error=self._results.get_nowait()
             except queue.Empty:break
-            if g!=self._generation or self.closed:
+            # Disconnect cancels data jobs, but a completed OAuth renewal may
+            # contain the only valid rotated token. Forget/configuration changes
+            # cancel authorization results too.
+            stale=(auth_g!=self._auth_generation if kind in ('tokens','refreshed') else g!=self._generation)
+            if stale or self.closed:
                 if kind=='connected' and result:result[1].close()
                 continue
-            self.busy=False
+            if job==self._busy_job:self.busy=False;self._busy_job=None
+            if kind=='refreshed':self._renewal_auth=None
             if error:
-                self.message='cTrader connection step failed. Check application details, authorization and Internet access; retry.'
+                category,delay=error
+                if category=='authorization':
+                    self._wanted=False;self._retry_at=None
+                    self.message='cTrader authorization was rejected or expired. Check the application details and authorize again.'
+                elif kind=='connected' and self._wanted:
+                    self._schedule_retry(delay)
+                else:self.message='cTrader connection step failed. Check application details, authorization and Internet access; retry.'
+                if kind=='refreshed':
+                    self._wanted=False;self._retry_at=None;self.engine.disconnect()
+                    if self._active:self._active.close();self._active=None
+                    self.message='Authorization renewal failed. Open read-only authorization again to reconnect.'
                 continue
             if kind in ('tokens','refreshed'):
                 self.tokens=result;self.message='Authorization ready. Load demo accounts.';self._save()
-                if kind=='refreshed' and self.account and self.accounts:self.connect(self.account)
+                if kind=='refreshed' and self._wanted and self._desired_account and self.accounts:
+                    # cTrader may invalidate the old stream's token during our
+                    # successful renewal. Retire that stream before evaluating
+                    # connection state with the new token.
+                    self.engine.disconnect()
+                    if self._active:self._active.close();self._active=None
+                    # Reauthorize with the rotated token through the same retry
+                    # path, preserving any broker-imposed cooldown.
+                    if self._retry_at is None:self._retry_at=self._clock()
             elif kind=='accounts':
                 self.accounts=result
                 self.message='Select a demo account, then Connect data.' if result else 'No authorized demo account found. Authorize your Spotware demo account.'
@@ -153,9 +197,44 @@ class ConnectionController:
             tokens=self.tokens;oauth=self.oauth
             # One attempt per expiry. A failed refresh requires explicit authorization.
             self.tokens=None
+            self._renewal_auth=self._auth_generation
             self._job('refreshed',lambda g:oauth.refresh(tokens))
             self.message='Refreshing authorization…'
+        self._maintain_connection()
+
+    def _schedule_retry(self,minimum=0):
+        delay=max(minimum,min(60,2**min(self._retry_attempt+1,6)))
+        self._retry_attempt+=1;self._retry_at=self._clock()+delay;self._stable_since=None
+        if self._active:self._active.close();self._active=None
+        self.message=f'Connection interrupted. Reconnecting in {delay:.0f} seconds…'
+
+    def _observe_connection_state(self):
+        if not self._wanted:return
+        state=self.engine.connection_state
+        if state=='authorization_required':
+            if self._renewal_auth==self._auth_generation:return
+            self._wanted=False;self._retry_at=None
+            self.message='cTrader authorization ended. Open read-only authorization again.'
+            return
+        if state=='interrupted' and self._retry_at is None:
+            self._schedule_retry(self.engine.connection_retry_after)
+
+    def _maintain_connection(self):
+        self._observe_connection_state()
+        if not self._wanted or self.busy or not self.tokens:return
+        state=self.engine.connection_state;now=self._clock()
+        if state=='connected' and self._active and self._retry_at is None:
+            if self._stable_since is None:self._stable_since=now
+            if now-self._stable_since>=30:self._retry_attempt=0
+            return
+        if self._retry_at is not None:
+            if now>=self._retry_at:
+                try:self.connect(self._desired_account,automatic=True)
+                except Exception:self._schedule_retry()
+            else:self.message=f'Connection interrupted. Reconnecting in {max(1,int(self._retry_at-now+.999))} seconds…'
+
     def disconnect(self):
+        self._wanted=False;self._retry_at=None;self._retry_attempt=0;self._stable_since=None
         with self._lock:
             self._generation+=1;self.busy=False
             pending=tuple(self._pending);self._pending.clear();active=self._active;self._active=None
@@ -165,6 +244,7 @@ class ConnectionController:
         self.message='Disconnected. Fresh history will be checked on reconnect.'
     def forget(self):
         self.disconnect();self.credentials.clear();self.tokens=None;self.accounts=();self.account=None
+        self._auth_generation+=1
         self.message='Saved credentials removed.'
     def close(self):
         if self.closed:return

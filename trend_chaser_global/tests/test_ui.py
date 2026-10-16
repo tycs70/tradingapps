@@ -60,6 +60,12 @@ class DashboardTest(unittest.TestCase):
         self.app.close();self.app.close()
         self.assertTrue(self.app.closed);self.assertTrue(self.engine.closed)
 
+    def test_refresh_keeps_one_timer_and_close_cancels_it(self):
+        self.app.refresh();self.app.refresh()
+        self.assertEqual(len(self.root.tk.call('after','info')),1)
+        self.app.close()
+        self.assertFalse(self.root.tk.call('after','info'))
+
     def test_inactive_rows_are_grey_and_selected_details_include_distance(self):
         section=self.app.sections['Shares'];row=self.engine.snapshot().groups['Shares'][0]
         section.update_rows([replace(row,rank=None,status='STALE')])
@@ -78,6 +84,18 @@ if __name__=='__main__':unittest.main()
 
 @unittest.skipUnless(os.environ.get('DISPLAY') or os.name=='nt','Requires a display')
 class ConnectedDashboardTest(unittest.TestCase):
+    def test_disconnect_and_forget_remain_available_during_connection_work(self):
+        from global_trend.ui_connection import ConnectionPanel
+        from tests.test_connection import Engine
+        with tempfile.TemporaryDirectory() as t:
+            root=tk.Tk();panel=ConnectionPanel(root,Engine(),CredentialStore(Path(t)/'creds'))
+            try:
+                panel.controller.busy=True;panel.poll()
+                for label in ('Disconnect','Forget credentials'):
+                    button=next(b for b in panel.buttons if b.cget('text')==label)
+                    self.assertNotIn('disabled',button.state())
+            finally:panel.close();root.destroy()
+
     def test_real_engine_fixture_reaches_ranked_and_stale_widget_states(self):
         from tests.test_engine import Clock,assets,Broker,wait_for
         from global_trend.engine import Engine

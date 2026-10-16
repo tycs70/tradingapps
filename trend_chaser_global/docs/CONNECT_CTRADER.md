@@ -36,6 +36,14 @@ The app obtains the internal API account ID from cTrader. Do not type the deskto
 
 A single authenticated connection supplies Indices, Forex and Shares. During startup, each row shows its progress while the app discovers symbols and loads at least 100 completed five-minute candles. Independently ready instruments can scan while other rows warm up.
 
+From version **1.0.1**, the app sends regular keepalives even while quotes are arriving.
+If the connection is interrupted, it automatically reauthorizes the selected demo
+account using the current token, subscribes again and checks missed candles before
+restoring ranks. The connection screen shows the retry countdown. Repeated failures
+back off from 2 to at most 60 seconds, or longer when the broker specifies a cooldown.
+**Disconnect** and **Forget credentials** cancel pending retries, including work
+already in progress. Revoked/invalid authorization requires a fresh browser grant.
+
 The connection uses encrypted, certificate-verified TLS to `demo.ctraderapi.com` on TCP port **5035**. Authorization uses `openapi.ctrader.com` over HTTPS. If a firewall blocks these destinations, permit the official services; do not turn off certificate verification.
 
 ## 4. Check instrument matches

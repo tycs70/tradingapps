@@ -8,8 +8,11 @@ from pathlib import Path, PurePosixPath
 import shutil
 import zipfile
 import re
+import sys
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from global_trend import VERSION
 RUNTIME_HASH='6fba7f2ae506facf41d457ea8293c7497910a675c69a4e954875169410a50402'
 RUNTIME_URL='https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-pc-windows-msvc-install_only_stripped.tar.gz'
 PINS={'certifi':'2026.7.22','charset-normalizer':'3.5.2','idna':'3.20','protobuf':'7.36.2',
@@ -35,7 +38,7 @@ def safe_relative(value: str) -> str:
 
 def manifest_for(root: Path) -> dict:
     if any(p.is_symlink() for p in root.rglob('*')):raise ValueError('Symlinks are not permitted in packages.')
-    return {'version':'1.0.0','runtime_source_sha256':RUNTIME_HASH,'runtime_source_url':RUNTIME_URL,
+    return {'version':VERSION,'runtime_source_sha256':RUNTIME_HASH,'runtime_source_url':RUNTIME_URL,
             'files':{safe_relative(p.relative_to(root).as_posix()):digest(p)
                      for p in sorted(root.rglob('*')) if p.is_file() and p!=root/'manifest.json'}}
 
@@ -108,7 +111,8 @@ def runtime_zip(archive: Path,output: Path):
 
 def build(archive: Path) -> Path:
     wheels=ROOT/'build'/'wheels';records=validate_wheels(wheels)
-    destination=ROOT/'build'/'release'/'Trend_Chaser_Global_1.0.0'
+    release_name=f'Trend_Chaser_Global_{VERSION}'
+    destination=ROOT/'build'/'release'/release_name
     if destination.exists():shutil.rmtree(destination)
     destination.mkdir(parents=True)
     app=destination/'app';app.mkdir()
@@ -126,10 +130,10 @@ def build(archive: Path) -> Path:
     (destination/'manifest.json').write_text(json.dumps(manifest_for(destination),indent=2),encoding='utf-8')
     verify_tree(destination)
     dist=ROOT/'dist';dist.mkdir(exist_ok=True)
-    output=dist/'Trend_Chaser_Global_1.0.0_Windows_x64.zip'
+    output=dist/f'{release_name}_Windows_x64.zip'
     with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as zip:
         for path in sorted(destination.rglob('*')):
-            if path.is_file():add_zip_file(zip,'Trend_Chaser_Global_1.0.0/'+path.relative_to(destination).as_posix(),path.read_bytes())
+            if path.is_file():add_zip_file(zip,release_name+'/'+path.relative_to(destination).as_posix(),path.read_bytes())
     (output.with_suffix('.zip.sha256')).write_text(digest(output)+'  '+output.name+'\n',encoding='utf-8')
     print(json.dumps({'file':str(output),'bytes':output.stat().st_size,'sha256':digest(output),'verified_files':len(manifest_for(destination)['files'])},indent=2))
     return output

@@ -1,9 +1,14 @@
-# Trend Chaser Global 1.0.0
+# Trend Chaser Global 1.0.1
 
 One Windows desktop scanner with pinned Indices, ranked Forex and ranked Shares.
 LONG rows are green, SHORT rows red; rankings use the EMA9 angle captured at an
 observed EMA9/21 crossover on five-minute candles. Read-only Spotware cTrader demo
 data supplies signals; trading on Olymp Trade remains manual.
+
+Version 1.0.1 fixes keepalive starvation during busy quote streams and automatically
+reconnects the selected demo account after temporary interruptions. Retries back off
+from 2 to 60 seconds and honor broker cooldowns. Rankings stay paused until missed
+candles are revalidated. Disconnect and Forget Credentials cancel recovery.
 
 The starting catalog contains 20 candidates: 3 indices, 10 currency pairs and
 7 shares. Nine name matches are supported by the supplied screenshots. NASDAQ's

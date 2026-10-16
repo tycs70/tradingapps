@@ -9,9 +9,18 @@ import uuid
 from .protocol import Common, OA, encode_message, decode_message
 
 MAX_FRAME=16*1024*1024
+HEARTBEAT_SECONDS=10
 
 
-class TransportError(RuntimeError):pass
+class TransportError(RuntimeError):
+    requires_authorization=False
+    def __init__(self,message,code='network'):
+        super().__init__(message);self.code=code
+
+class AuthorizationError(TransportError):
+    requires_authorization=True
+    def __init__(self,message='cTrader authorization is no longer valid. Authorize the application again.'):
+        super().__init__(message,code='authorization')
 
 class RateLimitError(TransportError):
     def __init__(self,retry_after,payload_type):
@@ -97,6 +106,10 @@ class ProtoClient:
                     with self._pending_lock:
                         self._blocked_until[payload_type]=max(self._blocked_until.get(payload_type,0),self._clock()+retry)
                     raise RateLimitError(retry,payload_type)
+                if value.errorCode in ('OA_AUTH_TOKEN_EXPIRED','ACCOUNT_NOT_AUTHORIZED','RET_NO_SUCH_LOGIN',
+                        'RET_ACCOUNT_DISABLED','CH_CLIENT_AUTH_FAILURE','CH_CLIENT_NOT_AUTHENTICATED',
+                        'CH_ACCESS_TOKEN_INVALID','CH_CTID_TRADER_ACCOUNT_NOT_FOUND','CH_OA_CLIENT_NOT_FOUND'):
+                    raise AuthorizationError()
                 raise TransportError('cTrader rejected the request. Check authorization and account permissions.')
             return value
         finally:
@@ -114,13 +127,14 @@ class ProtoClient:
             except queue.Full:pass
 
     def _receive(self):
-        decoder=FrameDecoder();sock=self._socket
+        decoder=FrameDecoder();sock=self._socket;reason='remote_closed'
         try:
             while not self._closed.is_set():
+                # Incoming quotes must not postpone the client's keepalive.
+                if time.monotonic()-self._last_sent>=HEARTBEAT_SECONDS:
+                    self._send(Common.ProtoHeartbeatEvent())
                 try:data=sock.recv(65536)
-                except socket.timeout:
-                    if time.monotonic()-self._last_sent>=20:self._send(Common.ProtoHeartbeatEvent())
-                    continue
+                except socket.timeout:continue
                 if not data:break
                 for body in decoder.feed(data):
                     ident,message=decode_message(body)
@@ -133,12 +147,15 @@ class ProtoClient:
                         except queue.Full:pass
                     else:
                         for callback in tuple(self._callbacks):callback(message)
-        except Exception:pass  # A failing decoder/consumer closes safely without dumping wire data.
+        except ssl.SSLError:reason='tls'
+        except (OSError,TransportError):reason='socket'
+        except ValueError:reason='protocol'
+        except Exception:reason='processing'
         finally:
             unexpected=not self._closed.is_set();self._closed.set();self._fail_pending()
             if unexpected:
                 for callback in tuple(self._callbacks):
-                    try:callback(TransportError('cTrader connection was interrupted.'))
+                    try:callback(TransportError('cTrader connection was interrupted.',code=reason))
                     except Exception:pass
             try:sock.close()
             except OSError:pass

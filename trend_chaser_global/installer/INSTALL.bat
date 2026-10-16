@@ -2,7 +2,7 @@
 setlocal
 title Trend Chaser Global - Windows installation
 cd /d "%~dp0"
-echo Installing Trend Chaser Global 1.0.0 for this Windows user...
+echo Installing Trend Chaser Global 1.0.1 for this Windows user...
 echo The private Python runtime and dependencies are bundled. No admin rights required.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
 if errorlevel 1 (

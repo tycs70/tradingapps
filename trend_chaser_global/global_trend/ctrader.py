@@ -6,7 +6,7 @@ import threading
 import time
 from google.protobuf.json_format import MessageToDict
 from .protocol import OA,Model
-from .transport import ProtoClient,TransportError
+from .transport import ProtoClient,TransportError,AuthorizationError
 from .models import Candle
 from .calendar import MarketCalendar
 from .catalog import resolve_catalog
@@ -88,7 +88,7 @@ class CTraderClient:
     def authorize(self,account_id,tokens):
         account=next((a for a in self.accounts(tokens) if a['account_id']==account_id),None)
         if account is None or account['is_live'] is not False:
-            raise TransportError('Select an explicitly identified authorized demo account.')
+            raise AuthorizationError('Select an explicitly identified authorized demo account.')
         response=self.transport.request(OA.ProtoOAAccountAuthReq(ctidTraderAccountId=account_id,
                                                                  accessToken=self._token(tokens)))
         if response.ctidTraderAccountId!=account_id:raise TransportError('Account authentication mismatch.')
@@ -152,7 +152,7 @@ class CTraderClient:
 
     def _event(self,message):
         if not self._callback:return
-        if isinstance(message,TransportError):self._callback('disconnected',None)
+        if isinstance(message,TransportError):self._callback('disconnected',message.code)
         elif isinstance(message,OA.ProtoOASpotEvent) and message.ctidTraderAccountId==self._account_id:
             if message.HasField('bid') or message.HasField('ask'):
                 try:q=decode_spot(message)
@@ -168,7 +168,9 @@ class CTraderClient:
                         while len(self._bar_versions)>2048:self._bar_versions.popitem(last=False)
                         self._callback('bar_update',message.symbolId)
         elif isinstance(message,(OA.ProtoOAAccountDisconnectEvent,OA.ProtoOAClientDisconnectEvent)):
-            self._callback('disconnected',None)
+            self._callback('disconnected','server')
+        elif isinstance(message,OA.ProtoOAAccountsTokenInvalidatedEvent) and self._account_id in message.ctidTraderAccountIds:
+            self._callback('disconnected','authorization')
 
     def close(self):
         self._closed.set();self.transport.close();self._client_secret=''

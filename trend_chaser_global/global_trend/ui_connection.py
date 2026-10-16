@@ -35,11 +35,11 @@ class ConnectionPanel(ttk.Frame):
         self.account_combo=ttk.Combobox(self,textvariable=self.account,state='readonly',width=55)
         self.account_combo.grid(row=7,column=1,columnspan=2,sticky='ew',pady=8)
         self.connect_button=button('Connect data',self.connect_data,8)
-        button('Disconnect',self.disconnect,8,2)
+        self.disconnect_button=button('Disconnect',self.disconnect,8,2)
         self.remember_button=ttk.Checkbutton(self,text='Remember on this Windows user (DPAPI)',variable=self.remember)
         self.remember_button.grid(row=9,column=1,sticky='w',pady=5)
         if not credentials.available or demo:self.remember_button.state(['disabled'])
-        button('Forget credentials',self.forget,9,2)
+        self.forget_button=button('Forget credentials',self.forget,9,2)
         ttk.Label(self,textvariable=self.message,style='Muted.TLabel',wraplength=900).grid(row=10,column=0,columnspan=3,sticky='ew',pady=10)
         ttk.Label(self,text='Quotes come from cTrader demo. Place any trades manually on Olymp Trade.',style='Muted.TLabel').grid(row=11,column=0,columnspan=3,sticky='w')
         button('Instrument mappings / verify Olymp match…',self.edit_mappings,12)
@@ -79,7 +79,9 @@ class ConnectionPanel(ttk.Frame):
         if values!=self._account_values:
             self.account_combo.configure(values=values);self._account_values=values
             if values:self.account_combo.current(0)
-        for b in self.buttons:b.state(['disabled'] if self.controller.busy else ['!disabled'])
+        for b in self.buttons:
+            cancellable=b in (self.disconnect_button,self.forget_button)
+            b.state(['disabled'] if self.controller.busy and not cancellable else ['!disabled'])
     def edit_mappings(self):
         c=self.controller
         if not c.account or not self.mappings:

@@ -4,6 +4,11 @@ from tools.build_release import safe_relative,manifest_for,verify_tree,validate_
 
 ROOT=Path(__file__).resolve().parents[1]
 class PackageTest(unittest.TestCase):
+    def test_release_manifest_matches_the_running_app_version(self):
+        from global_trend import VERSION
+        with tempfile.TemporaryDirectory() as t:
+            self.assertEqual(manifest_for(Path(t))['version'],VERSION)
+
     def test_escape_paths_and_symlinks_rejected(self):
         for p in ('../x','/tmp/x','C:/x','a/../../x','a\\b','a//b','a. /b','CON.txt','a/x:ads'):
             with self.assertRaises(ValueError):safe_relative(p)

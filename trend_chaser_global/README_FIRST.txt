@@ -1,10 +1,15 @@
-TREND CHASER GLOBAL 1.0.0 - WINDOWS x64
+TREND CHASER GLOBAL 1.0.1 - WINDOWS x64
 
 1. Download the complete ZIP, then right-click it and choose Extract All.
-2. Open the extracted Trend_Chaser_Global_1.0.0 folder.
+2. Open the extracted Trend_Chaser_Global_1.0.1 folder.
 3. Double-click INSTALL.bat. No existing Python or administrator rights needed.
 4. Open Trend Chaser Global from the Desktop or Start Menu.
 5. Open Help & rules for the cTrader connection walkthrough.
+
+UPDATING FROM 1.0.0: Close the running app, extract this ZIP and run INSTALL.bat.
+The installer preserves saved authorization, instrument mappings and preferences.
+After opening the updated app, load the demo account and Connect data once.
+Temporary interruptions then reconnect automatically with history revalidation.
 
 The installation is offline and uses the bundled private Python/Tk runtime.
 Internet access is needed later for cTrader authorization and market data.

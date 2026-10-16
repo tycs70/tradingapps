@@ -5,7 +5,15 @@ scanner source and its release remain unchanged. Linux automated checks establis
 development and offline package readiness; they do not establish a native Windows
 install or authenticated cTrader service readiness.
 
-## Executed checks
+## Version 1.0.1 update
+
+See [Connection repair evidence](CONNECTION_FIX_1.0.1.md) for the current repair:
+148 tests run, 147 passed and one Windows-only DPAPI test skipped. The twelve
+real Tk8.6 UI tests also passed. The user supplied screenshots confirming 1.0.0
+Windows authorization and live demo quotes before reporting the disconnect;
+native Windows and real-broker stability of 1.0.1 still require user validation.
+
+## Version 1.0.0 baseline checks
 
 - New application: **126 tests run, 125 passed, 1 skipped** (native Windows DPAPI),
   full suite with a display, including strategy, captured-angle

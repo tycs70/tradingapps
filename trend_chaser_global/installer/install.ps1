@@ -92,7 +92,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $Source 'uninstall.ps1') -Destination (Join-Path $Root 'uninstall.ps1') -Force
     New-Item -Path $RegPath -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name DisplayName -Value 'Trend Chaser Global' -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.0' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $RegPath -Name DisplayVersion -Value '1.0.1' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name Publisher -Value 'TradingApps' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $RegPath -Name InstallLocation -Value $Root -PropertyType String -Force | Out-Null
     $UninstallCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $Root 'uninstall.ps1') + '"'

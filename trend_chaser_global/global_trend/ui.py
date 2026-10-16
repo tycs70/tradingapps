@@ -105,6 +105,8 @@ class App:
         self.refresh()
     def refresh(self):
         if self.closed:return
+        if self._after:
+            self.root.after_cancel(self._after);self._after=None
         self.connection.poll();state=self.engine.snapshot()
         self.source.set(state.source)
         self.metrics.set(f"{state.counts.get('ranked',0):02d} RANKED     /     {state.counts.get('fresh',0):02d} FRESH     /     {state.counts.get('history_ready',0):02d} HISTORY READY     /     {state.counts.get('mapped',0):02d} MAPPED")

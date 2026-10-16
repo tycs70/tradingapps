@@ -85,6 +85,15 @@ class EngineTest(unittest.TestCase):
         self.tick(self.items[2],100.1)
         self.assertEqual(self.row().status,'WATCHING');self.assertIsNone(self.row().rank)
 
+    def test_connection_state_distinguishes_interruption_from_manual_disconnect(self):
+        self.assertEqual(self.engine.connection_state,'connected')
+        self.broker.callback('disconnected','remote_closed')
+        wait_for(lambda:self.engine.connection_state=='interrupted')
+        self.assertFalse(self.engine.snapshot().connected)
+        self.assertTrue(self.engine.snapshot().diagnostics)
+        self.engine.disconnect()
+        self.assertEqual(self.engine.connection_state,'idle')
+
     def test_mapping_change_discards_old_instrument_membership(self):
         from dataclasses import replace
         self.cross();self.broker.bars.append(Candle(BUCKET,100,100.2,99.8,100.1,1))
@@ -143,6 +152,18 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(len(calls),1)
         self.clock.advance(118)
         wait_for(lambda:len(calls)==2)
+
+    def test_history_authorization_rejection_stops_connection_and_retries(self):
+        from global_trend.transport import AuthorizationError
+        calls=[]
+        def rejected(asset,start,end):
+            calls.append(asset.entry.key);raise AuthorizationError()
+        self.broker.history=rejected
+        self.broker.callback('bar_update',self.items[2].symbol_id)
+        wait_for(lambda:bool(calls) and not self.engine.snapshot().counts['history_pending'])
+        self.assertEqual(self.engine.connection_state,'authorization_required')
+        before=len(calls);self.clock.advance(10);self.engine.snapshot();time.sleep(.05)
+        self.assertEqual(len(calls),before);self.assertTrue(self.broker.closed)
 
     def test_three_groups_rank_independently_and_keep_frozen_score(self):
         for item in self.items:
